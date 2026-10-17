@@ -4,38 +4,95 @@ import com.example.polygoneditor.geometry.Vec2
 import com.example.polygoneditor.geometry.containsEvenOdd
 import com.example.polygoneditor.geometry.midpoint
 
-// Closed polygon, the edge i represents connection between vertex i and i+1 mod n
+// Closed polygon, represented by the list of Edge objects
 class Polygon(points: List<Vec2>) {
     init {
         require(points.size >= MIN_VERTICES) { "Polygon has to have minimum of $MIN_VERTICES vertices" }
     }
 
-    private val _vertices: MutableList<Vertex> = points.map(::Vertex).toMutableList()
+    val edges: List<Edge>
+        field: MutableList<Edge> = points.map(::Vertex)
+            .let { vs ->
+                (vs + vs.first())
+                    .zipWithNext { a, b -> Edge(a, b) }
+            }
+            .toMutableList()
 
-    val vertices: List<Vertex> get() = _vertices;
-
-    val edgeCount: Int get() = _vertices.size
-
-    fun edge(i: Int): Pair<Vertex, Vertex> = _vertices[i] to _vertices[(i + 1) % _vertices.size]
-
-    fun translate(delta: Vec2) {
-        _vertices.forEach { it.pos += delta }
+    init {
+        checkRing()
     }
 
-    fun canRemoveVertex() = _vertices.size > MIN_VERTICES
+    val vertices: List<Vertex> get() = edges.map { it.start }
 
-    fun removeVertex(v: Vertex): Boolean = canRemoveVertex() && _vertices.remove(v)
+    val edgeCount: Int get() = edges.size
 
-    // Inserts new vertex in the middle of the [edgeIndex] edge
-    fun insertVertexOnEdge(edgeIndex: Int): Vertex {
-        val (a, b) = edge(edgeIndex)
-        val v = Vertex(midpoint(a.pos, b.pos))
-        _vertices.add(edgeIndex + 1, v)
+    val points: List<Point> get() = vertices + edges.flatMap { it.controlPoints }
+
+    // Checks if edges make up full ring
+    private fun checkRing() {
+        for (i in edges.indices) {
+            check(edges[i].end === edges[(i + 1) % edges.size].start) {
+                "Edge ring broken at $i"
+            }
+        }
+    }
+
+    // Translates all points when moving the polygon
+    fun translate(delta: Vec2) {
+        points.forEach { it.pos += delta }
+    }
+
+    fun canRemoveVertex() = edgeCount > MIN_VERTICES
+
+    // (incoming, outgoing) edges at vertex v
+    fun edgesAt(v: Vertex): Pair<Edge, Edge> {
+        val i = incomingIndex(v)
+        return edges[i] to edges[(i + 1) % edges.size]
+    }
+
+    private fun incomingIndex(v: Vertex): Int {
+        val i = edges.indexOfFirst { it.end === v }
+        require(i >= 0) { "Vertex does not belong to this polygon" }
+        return i
+    }
+
+    // Removes the vertex v, replaces the in and out edges with one edge
+    fun removeVertex(v: Vertex): Boolean {
+        if (!canRemoveVertex()) return false
+
+        val (inEdge, outEdge) = edgesAt(v)
+
+        val inIdx = edges.indexOf(inEdge)
+        val outIdx = edges.indexOf(outEdge)
+
+        edges[inIdx] = Edge(inEdge.start, outEdge.end)
+        edges.removeAt(outIdx)
+
+        checkRing()
+        return true
+    }
+
+    // Inserts new vertex in the middle of the given edge
+    // replaces current edge with two new ones
+    fun insertVertexOnEdge(e: Edge): Vertex {
+        val i = edges.indexOf(e)
+        require(i >= 0) { "Edge does not belong to this polygon" }
+
+        // Add two new edges in place of edge i
+        val v = Vertex(midpoint(e.start.pos, e.end.pos))
+        edges[i] = Edge(e.start, v)
+        edges.add(i + 1, Edge(v, e.end))
+
+        checkRing()
         return v
     }
 
     // Checks if point p is inside this polygon
-    operator fun contains(p: Vec2) = containsEvenOdd(_vertices.map { it.pos }, p)
+    operator fun contains(p: Vec2) = containsEvenOdd(vertices.map { it.pos }, p)
+
+    /** OLD functions for the Editor TODO */
+    fun edge(i: Int): Pair<Vertex, Vertex> = edges[i].start to edges[i].end
+    fun insertVertexOnEdge(edgeIndex: Int): Vertex = insertVertexOnEdge(edges[edgeIndex])
 
     companion object {
         const val MIN_VERTICES = 3
