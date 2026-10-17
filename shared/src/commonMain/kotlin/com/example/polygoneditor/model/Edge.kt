@@ -12,7 +12,10 @@ sealed interface EdgeShape {
 class Edge(val start: Vertex, val end: Vertex, var shape: EdgeShape = EdgeShape.Line) {
     val controlPoints: List<ControlPoint>
         get() = when (val s = shape) {
-            is EdgeShape.Bezier -> listOf<ControlPoint>(s.c1, s.c2)
-            is EdgeShape.Line, EdgeShape.Arc -> emptyList<ControlPoint>()
+            is EdgeShape.Bezier -> listOf(s.c1, s.c2)
+            EdgeShape.Line, EdgeShape.Arc -> emptyList()
         }
+
+    // Ends + control points – everything that moves when the edge is dragged
+    val points: List<Point> get() = listOf(start, end) + controlPoints
 }

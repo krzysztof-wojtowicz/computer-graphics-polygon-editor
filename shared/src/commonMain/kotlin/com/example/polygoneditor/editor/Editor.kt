@@ -23,6 +23,7 @@ sealed interface Hit {
 /** What's being dragged */
 private sealed interface Drag {
     class MoveVertex(val vertex: Vertex) : Drag
+    class MoveEdge(val edge: Edge, var last: Vec2) : Drag
     class MovePolygon(val polygon: Polygon, var last: Vec2) : Drag
 }
 
@@ -70,7 +71,7 @@ class Editor(val scene: Scene) {
         message = null
         drag = when (val hit = hitTest(p)) {
             is Hit.OnVertex -> Drag.MoveVertex(hit.vertex)
-            is Hit.OnEdge -> Drag.MovePolygon(hit.polygon, p)
+            is Hit.OnEdge -> Drag.MoveEdge(hit.edge, p)
             is Hit.Inside -> Drag.MovePolygon(hit.polygon, p)
             null -> null
         }
@@ -79,6 +80,11 @@ class Editor(val scene: Scene) {
     fun onMove(p: Vec2) {
         when (val d = drag) {
             is Drag.MoveVertex -> d.vertex.pos = p
+            is Drag.MoveEdge -> {
+                val delta = p - d.last
+                d.edge.points.forEach { it.pos += delta }
+                d.last = p
+            }
             is Drag.MovePolygon -> {
                 d.polygon.translate(p - d.last)
                 d.last = p
