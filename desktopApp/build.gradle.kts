@@ -10,6 +10,10 @@ dependencies {
     implementation(project(":shared"))
 
     implementation(compose.desktop.currentOs)
+    // Natywne biblioteki Skii dla pozostałych systemów – dzięki temu uber-JAR
+    // zbudowany na Macu uruchomi się też na Windowsie i Linuksie.
+    implementation(compose.desktop.windows_x64)
+    implementation(compose.desktop.linux_x64)
     implementation(libs.kotlinx.coroutinesSwing)
 
     implementation(libs.compose.uiToolingPreview)
@@ -21,7 +25,7 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "com.example.polygoneditor"
+            packageName = "PolygonEditor"
             packageVersion = "1.0.0"
         }
     }

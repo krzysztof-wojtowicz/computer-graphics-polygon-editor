@@ -1,0 +1,56 @@
+name: Build
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Test
+        run: ./gradlew :shared:jvmTest
+
+      - name: Build distributable
+        run: ./gradlew :desktopApp:createDistributable
+
+      # Uruchamia gotową aplikację i sprawdza, czy po 15 s nadal działa (nie wysypała się przy starcie).
+      - name: Smoke test
+        run: |
+          APP_DIR=desktopApp/build/compose/binaries/main/app/PolygonEditor
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            "$APP_DIR/PolygonEditor.exe" &
+          else
+            command -v xvfb-run || sudo apt-get install -y xvfb
+            xvfb-run -a "$APP_DIR/bin/PolygonEditor" &
+          fi
+          PID=$!
+          sleep 15
+          if kill -0 $PID 2>/dev/null; then
+            echo "Aplikacja działa po 15 s – OK"
+            if [ "$RUNNER_OS" = "Windows" ]; then taskkill //F //IM PolygonEditor.exe || true; else kill $PID || true; fi
+          else
+            wait $PID; echo "Aplikacja zakończyła się przedwcześnie (kod $?)"; exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PolygonEditor-${{ runner.os }}
+          path: desktopApp/build/compose/binaries/main/app/
