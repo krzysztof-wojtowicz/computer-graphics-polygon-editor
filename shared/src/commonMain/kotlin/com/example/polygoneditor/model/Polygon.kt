@@ -4,10 +4,6 @@ import com.example.polygoneditor.geometry.Vec2
 import com.example.polygoneditor.geometry.containsEvenOdd
 import com.example.polygoneditor.geometry.midpoint
 
-// Vertex class, without the 'data' keyword it is an entity,
-// two vertices with the same coordinates are different objects with '==' operation
-class Vertex(var pos: Vec2)
-
 // Closed polygon, the edge i represents connection between vertex i and i+1 mod n
 class Polygon(points: List<Vec2>) {
     init {
