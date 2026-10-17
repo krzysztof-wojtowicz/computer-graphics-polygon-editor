@@ -24,6 +24,8 @@ private val EdgeColor = Color(0xFF1F2937)
 private val VertexColor = Color(0xFFDC2626)
 private val HighlightColor = Color(0xFFF59E0B)
 
+private val SelectedColor = Color(0xFF2563EB)
+
 private fun Density.toScene(o: Offset) = Vec2(o.x.toDouble() / density, o.y.toDouble() / density)
 private fun Density.toScreen(v: Vec2) = Offset((v.x * density).toFloat(), (v.y * density).toFloat())
 
@@ -54,6 +56,7 @@ fun SceneCanvas(editor: Editor, modifier: Modifier = Modifier) {
     ) {
         editor.version // reading this state subscribes the canvas to redraw on every model change
         val hovered = editor.hovered
+        val selection = editor.selection
         val stroke = 2.dp.toPx()
         val vertexRadius = 5.dp.toPx()
 
@@ -76,19 +79,29 @@ fun SceneCanvas(editor: Editor, modifier: Modifier = Modifier) {
             // Draw edges of the polygon
             for (edge in poly.edges) {
                 val isHovered = hovered is Hit.OnEdge && hovered.polygon === poly && hovered.edge == edge
+                val isSelected = edge in selection
                 drawLine(
-                    if (isHovered) HighlightColor else EdgeColor,
+                    color = when {
+                        isSelected -> SelectedColor
+                        isHovered -> HighlightColor
+                        else -> EdgeColor
+                    },
                     toScreen(edge.start.pos), toScreen(edge.end.pos),
-                    strokeWidth = if (isHovered) stroke * 2 else stroke,
+                    strokeWidth = if (isHovered || isSelected) stroke * 2 else stroke,
                 )
             }
 
             // Draw vertices of the polygon
             for (v in poly.vertices) {
                 val isHovered = hovered is Hit.OnVertex && hovered.vertex === v
+                val isSelected = v in selection
                 drawCircle(
-                    if (isHovered) HighlightColor else VertexColor,
-                    radius = if (isHovered) vertexRadius * 1.5f else vertexRadius,
+                    color = when {
+                        isSelected -> SelectedColor
+                        isHovered -> HighlightColor
+                        else -> VertexColor
+                    },
+                    radius = if (isHovered || isSelected) vertexRadius * 1.5f else vertexRadius,
                     center = toScreen(v.pos),
                 )
             }

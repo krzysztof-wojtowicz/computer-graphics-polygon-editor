@@ -20,6 +20,25 @@ sealed interface Hit {
     data class Inside(override val polygon: Polygon) : Hit
 }
 
+/** What the user has selected */
+sealed interface Selection {
+    data object None : Selection
+    data class OnVertex(val polygon: Polygon, val vertex: Vertex) : Selection
+    data class OnEdge(val polygon: Polygon, val edge: Edge) : Selection
+    data class TwoEdges(val first: Edge, val second: Edge) : Selection
+
+    operator fun contains(e: Edge): Boolean = when (this) {
+        is None, is OnVertex -> false
+        is OnEdge -> e === edge
+        is TwoEdges -> e === first || e === second
+    }
+
+    operator fun contains(v: Vertex): Boolean = when (this) {
+        is None, is OnEdge, is TwoEdges -> false
+        is OnVertex -> v === vertex
+    }
+}
+
 /** What's being dragged */
 private sealed interface Drag {
     class MoveVertex(val vertex: Vertex) : Drag
@@ -41,6 +60,9 @@ class Editor(val scene: Scene) {
         private set
 
     private var drag: Drag? = null
+
+    var selection by mutableStateOf<Selection>(Selection.None)
+        private set
 
     // Gets the object which is under the cursor
     fun hitTest(p: Vec2): Hit? {
@@ -65,11 +87,22 @@ class Editor(val scene: Scene) {
         return polygons.firstOrNull { p in it }?.let { Hit.Inside(it) }
     }
 
+    // Helper fun that converts hit to selection
+    private fun Hit?.toSelection(): Selection = when (this) {
+        is Hit.OnVertex -> Selection.OnVertex(polygon, vertex)
+        is Hit.OnEdge -> Selection.OnEdge(polygon, edge)
+        is Hit.Inside -> Selection.None
+        null -> Selection.None
+    }
+
     // ---- mouse actions ----
 
+    // On left click
     fun onPrimaryPress(p: Vec2) {
         message = null
-        drag = when (val hit = hitTest(p)) {
+        val hit = hitTest(p)
+        selection = hit.toSelection()
+        drag = when (hit) {
             is Hit.OnVertex -> Drag.MoveVertex(hit.vertex)
             is Hit.OnEdge -> Drag.MoveEdge(hit.edge, p)
             is Hit.Inside -> Drag.MovePolygon(hit.polygon, p)
@@ -85,6 +118,7 @@ class Editor(val scene: Scene) {
                 d.edge.points.forEach { it.pos += delta }
                 d.last = p
             }
+
             is Drag.MovePolygon -> {
                 d.polygon.translate(p - d.last)
                 d.last = p
@@ -115,6 +149,7 @@ class Editor(val scene: Scene) {
             is Hit.Inside, null -> return
         }
         hovered = hitTest(p)
+        selection = Selection.None
         changed()
     }
 
