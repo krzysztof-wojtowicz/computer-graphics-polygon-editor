@@ -101,11 +101,11 @@ class Editor(val scene: Scene) {
         message = null
         when (val hit = hitTest(p)) {
             is Hit.OnVertex ->
-                if (!hit.polygon.removeVertex(hit.vertex)) {
+                if (!scene.removeVertex(hit.polygon, hit.vertex)) {
                     message = "Polygon has to have at least ${Polygon.MIN_VERTICES} vertices."
                 }
 
-            is Hit.OnEdge -> hit.polygon.insertVertexOnEdge(hit.edge)
+            is Hit.OnEdge -> scene.insertVertex(hit.polygon, hit.edge)
             is Hit.Inside, null -> return
         }
         hovered = hitTest(p)

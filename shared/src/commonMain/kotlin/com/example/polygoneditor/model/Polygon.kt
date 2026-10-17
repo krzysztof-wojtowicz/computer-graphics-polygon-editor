@@ -57,6 +57,7 @@ class Polygon(points: List<Vec2>) {
     }
 
     // Removes the vertex v, replaces the in and out edges with one edge
+    // Low-level: does NOT remove constraints of the removed edges – use Scene.removeVertex instead
     fun removeVertex(v: Vertex): Boolean {
         if (!canRemoveVertex()) return false
 
@@ -74,6 +75,7 @@ class Polygon(points: List<Vec2>) {
 
     // Inserts new vertex in the middle of the given edge
     // replaces current edge with two new ones
+    // Low-level: does NOT remove constraints of the replaced edges – use Scene.insertVertex instead
     fun insertVertexOnEdge(e: Edge): Vertex {
         val i = edges.indexOf(e)
         require(i >= 0) { "Edge does not belong to this polygon" }
