@@ -90,10 +90,6 @@ class Polygon(points: List<Vec2>) {
     // Checks if point p is inside this polygon
     operator fun contains(p: Vec2) = containsEvenOdd(vertices.map { it.pos }, p)
 
-    /** OLD functions for the Editor TODO */
-    fun edge(i: Int): Pair<Vertex, Vertex> = edges[i].start to edges[i].end
-    fun insertVertexOnEdge(edgeIndex: Int): Vertex = insertVertexOnEdge(edges[edgeIndex])
-
     companion object {
         const val MIN_VERTICES = 3
     }

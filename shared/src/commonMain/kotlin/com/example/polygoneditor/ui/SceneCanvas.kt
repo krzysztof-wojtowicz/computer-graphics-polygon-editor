@@ -43,6 +43,7 @@ fun SceneCanvas(editor: Editor, modifier: Modifier = Modifier) {
                                 event.buttons.isPrimaryPressed -> editor.onPrimaryPress(pos)
                                 event.buttons.isSecondaryPressed -> editor.onSecondaryPress(pos)
                             }
+
                             PointerEventType.Move -> editor.onMove(pos)
                             PointerEventType.Release ->
                                 if (!event.buttons.isPrimaryPressed) editor.onRelease()
@@ -56,26 +57,33 @@ fun SceneCanvas(editor: Editor, modifier: Modifier = Modifier) {
         val stroke = 2.dp.toPx()
         val vertexRadius = 5.dp.toPx()
 
+        // Draw each polygon
         for (poly in editor.scene.polygons) {
             val pts = poly.vertices.map { toScreen(it.pos) }
 
+            // Draw fill of the polygon
             val path = Path().apply {
                 fillType = PathFillType.EvenOdd
                 moveTo(pts[0].x, pts[0].y)
                 pts.drop(1).forEach { lineTo(it.x, it.y) }
                 close()
             }
-            drawPath(path, if (hovered is Hit.Inside && hovered.polygon === poly) FillColor.copy(alpha = 0.25f) else FillColor)
+            drawPath(
+                path,
+                if (hovered is Hit.Inside && hovered.polygon === poly) FillColor.copy(alpha = 0.25f) else FillColor
+            )
 
-            for (i in pts.indices) {
-                val isHovered = hovered is Hit.OnEdge && hovered.polygon === poly && hovered.edgeIndex == i
+            // Draw edges of the polygon
+            for (edge in poly.edges) {
+                val isHovered = hovered is Hit.OnEdge && hovered.polygon === poly && hovered.edge == edge
                 drawLine(
                     if (isHovered) HighlightColor else EdgeColor,
-                    pts[i], pts[(i + 1) % pts.size],
+                    toScreen(edge.start.pos), toScreen(edge.end.pos),
                     strokeWidth = if (isHovered) stroke * 2 else stroke,
                 )
             }
 
+            // Draw vertices of the polygon
             for (v in poly.vertices) {
                 val isHovered = hovered is Hit.OnVertex && hovered.vertex === v
                 drawCircle(

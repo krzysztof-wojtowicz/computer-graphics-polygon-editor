@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.example.polygoneditor.geometry.Vec2
 import com.example.polygoneditor.geometry.distanceToSegment
+import com.example.polygoneditor.model.Edge
 import com.example.polygoneditor.model.Polygon
 import com.example.polygoneditor.model.Scene
 import com.example.polygoneditor.model.Vertex
@@ -15,7 +16,7 @@ sealed interface Hit {
     val polygon: Polygon
 
     data class OnVertex(override val polygon: Polygon, val vertex: Vertex) : Hit
-    data class OnEdge(override val polygon: Polygon, val edgeIndex: Int) : Hit
+    data class OnEdge(override val polygon: Polygon, val edge: Edge) : Hit
     data class Inside(override val polygon: Polygon) : Hit
 }
 
@@ -53,11 +54,9 @@ class Editor(val scene: Scene) {
 
         // Edge
         for (poly in polygons) {
-            (0 until poly.edgeCount)
-                .firstOrNull { i ->
-                    val (a, b) = poly.edge(i)
-                    distanceToSegment(p, a.pos, b.pos) <= EDGE_HIT_TOLERANCE
-                }
+            poly.edges.firstOrNull {
+                distanceToSegment(p, it.start.pos, it.end.pos) <= EDGE_HIT_TOLERANCE
+            }
                 ?.let { return Hit.OnEdge(poly, it) }
         }
 
@@ -84,6 +83,7 @@ class Editor(val scene: Scene) {
                 d.polygon.translate(p - d.last)
                 d.last = p
             }
+
             null -> {
                 val h = hitTest(p)
                 if (h == hovered) return
@@ -104,7 +104,8 @@ class Editor(val scene: Scene) {
                 if (!hit.polygon.removeVertex(hit.vertex)) {
                     message = "Polygon has to have at least ${Polygon.MIN_VERTICES} vertices."
                 }
-            is Hit.OnEdge -> hit.polygon.insertVertexOnEdge(hit.edgeIndex)
+
+            is Hit.OnEdge -> hit.polygon.insertVertexOnEdge(hit.edge)
             is Hit.Inside, null -> return
         }
         hovered = hitTest(p)
