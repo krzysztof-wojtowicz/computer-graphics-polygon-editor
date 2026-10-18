@@ -158,6 +158,16 @@ class Editor(val scene: Scene) {
         drag = null
     }
 
+    // On double left click – called right after onPrimaryPress of the second click
+    fun onDoubleClick(p: Vec2) {
+        val hit = hitTest(p) as? Hit.OnEdge ?: return
+        val v = scene.insertVertex(hit.polygon, hit.edge)
+        selection = Selection.OnVertex(hit.polygon, v)
+        drag = null           // MoveEdge from onPrimaryPress refers to the edge that no longer exists
+        hovered = hitTest(p)  // the old hovered edge no longer exists either
+        changed()
+    }
+
     // On right click
     fun onSecondaryPress(p: Vec2) {
         message = null

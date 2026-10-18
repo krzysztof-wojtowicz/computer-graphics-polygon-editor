@@ -27,6 +27,9 @@ private val HighlightColor = Color(0xFFF59E0B)
 
 private val SelectedColor = Color(0xFF2563EB)
 
+// Max distance (in dp) between the two presses of a double click
+private const val DOUBLE_CLICK_SLOP = 4.0
+
 private fun Density.toScene(o: Offset) = Vec2(o.x.toDouble() / density, o.y.toDouble() / density)
 private fun Density.toScreen(v: Vec2) = Offset((v.x * density).toFloat(), (v.y * density).toFloat())
 
@@ -38,13 +41,34 @@ fun SceneCanvas(editor: Editor, modifier: Modifier = Modifier) {
             .background(Color.White)
             .pointerInput(editor) {
                 awaitPointerEventScope {
+                    var lastPressTime = 0L
+                    var lastPressPos: Vec2? = null
+
                     while (true) {
                         val event = awaitPointerEvent()
                         val pos = toScene(event.changes.first().position)
                         when (event.type) {
                             PointerEventType.Press -> when {
-                                event.buttons.isPrimaryPressed ->
-                                    editor.onPrimaryPress(pos, shift = event.keyboardModifiers.isShiftPressed)
+                                event.buttons.isPrimaryPressed -> {
+                                    val shift = event.keyboardModifiers.isShiftPressed
+                                    val time = event.changes.first().uptimeMillis
+                                    editor.onPrimaryPress(pos, shift)
+
+                                    // Double click = second press soon after the previous one, near the same spot
+                                    val last = lastPressPos
+                                    val isDoubleClick = !shift && last != null &&
+                                        time - lastPressTime <= viewConfiguration.doubleTapTimeoutMillis &&
+                                        pos.distanceTo(last) <= DOUBLE_CLICK_SLOP
+
+                                    if (isDoubleClick) {
+                                        editor.onDoubleClick(pos)
+                                        lastPressPos = null // a third quick click starts a new sequence
+                                    } else {
+                                        lastPressTime = time
+                                        lastPressPos = pos
+                                    }
+                                }
+
                                 event.buttons.isSecondaryPressed -> editor.onSecondaryPress(pos)
                             }
 
