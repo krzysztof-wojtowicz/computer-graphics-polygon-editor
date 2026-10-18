@@ -7,9 +7,12 @@ import androidx.compose.runtime.setValue
 import com.example.polygoneditor.geometry.Vec2
 import com.example.polygoneditor.geometry.distanceToSegment
 import com.example.polygoneditor.model.Edge
+import com.example.polygoneditor.model.Point
 import com.example.polygoneditor.model.Polygon
 import com.example.polygoneditor.model.Scene
 import com.example.polygoneditor.model.Vertex
+import com.example.polygoneditor.solver.Locks
+import com.example.polygoneditor.solver.Solver.solve
 
 enum class LineAlgorithm { Library, Bresenham }
 
@@ -43,8 +46,8 @@ sealed interface Selection {
 
 /** What's being dragged */
 private sealed interface Drag {
-    class MoveVertex(val vertex: Vertex) : Drag
-    class MoveEdge(val edge: Edge, var last: Vec2) : Drag
+    class MoveVertex(val vertex: Vertex, val polygon: Polygon) : Drag
+    class MoveEdge(val edge: Edge, var last: Vec2, val polygon: Polygon) : Drag
     class MovePolygon(val polygon: Polygon, var last: Vec2) : Drag
 }
 
@@ -134,6 +137,18 @@ class Editor(val scene: Scene) {
         changed()
     }
 
+    // Moves the points by delta and then lets the solver fix the rest of the scene
+    // according to constraints, if solver fails, moves the whole polygon
+    private fun moveWithSolver(points: List<Point>, delta: Vec2, polygon: Polygon) {
+        val s = scene.snapshot()
+
+        points.forEach { it.pos += delta }
+        if (!solve(scene.constraints, Locks(locked = points.toSet()))) {
+            scene.restore(s)
+            polygon.translate(delta)
+        }
+    }
+
     // ---- mouse actions ----
 
     // On left click
@@ -144,19 +159,20 @@ class Editor(val scene: Scene) {
         selection = if (shift) extendSelection(hit) else hit.toSelection()
 
         drag = if (shift) null else when (hit) {
-            is Hit.OnVertex -> Drag.MoveVertex(hit.vertex)
-            is Hit.OnEdge -> Drag.MoveEdge(hit.edge, p)
+            is Hit.OnVertex -> Drag.MoveVertex(hit.vertex, hit.polygon)
+            is Hit.OnEdge -> Drag.MoveEdge(hit.edge, p, hit.polygon)
             is Hit.Inside -> Drag.MovePolygon(hit.polygon, p)
             null -> null
         }
     }
 
+    // On mouse move
     fun onMove(p: Vec2) {
         when (val d = drag) {
-            is Drag.MoveVertex -> d.vertex.pos = p
+            is Drag.MoveVertex ->
+                moveWithSolver(listOf(d.vertex), p - d.vertex.pos, d.polygon)
             is Drag.MoveEdge -> {
-                val delta = p - d.last
-                d.edge.points.forEach { it.pos += delta }
+                moveWithSolver(d.edge.points, p - d.last, d.polygon)
                 d.last = p
             }
 

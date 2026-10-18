@@ -6,8 +6,14 @@ import com.example.polygoneditor.geometry.Vec2
 import com.example.polygoneditor.model.ControlPoint
 import com.example.polygoneditor.model.EdgeShape
 import com.example.polygoneditor.model.Scene
+import com.example.polygoneditor.model.constraints.FixedLength
+import com.example.polygoneditor.model.constraints.Perpendicular
+import com.example.polygoneditor.solver.Solver
+import com.example.polygoneditor.solver.error
 import kotlin.test.Test
+import kotlin.math.abs
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -336,5 +342,92 @@ class EditorTest {
         editor.onRelease()
 
         assertEquals(Vec2(100.0, 0.0), v1.pos, "removed vertex must not follow the mouse")
+    }
+
+    // ---- dragging with constraints (solver) ----
+
+    private fun assertSatisfied(editor: Editor) {
+        editor.scene.constraints.forEach {
+            assertTrue(it.error() < Solver.EPS, "constraint not satisfied, error ${it.error()}")
+        }
+    }
+
+    private fun assertClose(expected: Vec2, actual: Vec2) {
+        assertTrue(abs(expected.x - actual.x) < 1e-9 && abs(expected.y - actual.y) < 1e-9, "expected $expected, got $actual")
+    }
+
+    @Test
+    fun draggedVertexIsUnderTheCursorAndKeepsLengthsOfItsEdges() {
+        val editor = editorWithSquare()
+        val poly = editor.scene.polygons[0]
+        val (e0, _, _, e3) = poly.edges // the two edges of v0
+        editor.scene.addConstraint(FixedLength(e0, 100.0))
+        editor.scene.addConstraint(FixedLength(e3, 100.0))
+
+        editor.drag(0, 0, -20, -10)
+
+        assertEquals(Vec2(-20.0, -10.0), poly.vertices[0].pos)
+        assertSatisfied(editor)
+    }
+
+    @Test
+    fun draggedEdgeMovesExactlyByDeltaAndKeepsPerpendicularNeighbour() {
+        val editor = editorWithSquare()
+        val poly = editor.scene.polygons[0]
+        val (e0, e1) = poly.edges
+        editor.scene.addConstraint(Perpendicular(e0, e1))
+
+        editor.drag(50, 0, 70, 0) // e0 sideways: e1 would lean without the solver
+
+        assertClose(Vec2(20.0, 0.0), e0.start.pos)
+        assertClose(Vec2(120.0, 0.0), e0.end.pos)
+        assertSatisfied(editor)
+        assertTrue(abs(e1.vector.x) < Solver.EPS, "e1 should be vertical again, got ${e1.vector}")
+    }
+
+    @Test
+    fun draggingInOnePolygonRotatesConstrainedEdgeOfAnother() {
+        val editor = editorWithSquare()
+        val square = editor.scene.polygons[0]
+        val other = editor.scene.polygon(200 to 0, 200 to 100, 300 to 100) // e0 vertical
+        editor.scene.addConstraint(Perpendicular(square.edges[0], other.edges[0]))
+
+        editor.drag(100, 0, 100, 30) // tilts the square's e0
+
+        assertEquals(Vec2(100.0, 30.0), square.vertices[1].pos)
+        assertSatisfied(editor)
+        assertTrue(abs(other.edges[0].vector.x) > 1.0, "other polygon's edge should have rotated")
+    }
+
+    @Test
+    fun draggingWholePolygonDoesNotTouchConstrainedOtherPolygon() {
+        val editor = editorWithSquare()
+        val square = editor.scene.polygons[0]
+        val other = editor.scene.polygon(200 to 0, 200 to 100, 300 to 100)
+        editor.scene.addConstraint(Perpendicular(square.edges[0], other.edges[0]))
+        val otherBefore = other.vertices.map { it.pos }
+
+        editor.drag(50, 50, 80, 70)
+
+        assertEquals(squarePositions.map { it + Vec2(30.0, 20.0) }, editor.vertexPositions())
+        assertEquals(otherBefore, other.vertices.map { it.pos })
+    }
+
+    @Test
+    fun whenSolverFailsTheWholePolygonFollowsTheCursor() {
+        // 1 + 1 < 5: no triangle satisfies these – added directly to the scene to force a solver failure
+        val editor = Editor(Scene().apply { polygon(0 to 0, 100 to 0, 0 to 100) })
+        val tri = editor.scene.polygons[0]
+        val (e0, e1, e2) = tri.edges
+        listOf(FixedLength(e0, 1.0), FixedLength(e1, 1.0), FixedLength(e2, 5.0)).forEach(editor.scene::addConstraint)
+
+        editor.drag(100, 0, 110, 20)
+
+        // shape unchanged, everything moved by the drag delta (10, 20)
+        assertEquals(
+            listOf(Vec2(10.0, 20.0), Vec2(110.0, 20.0), Vec2(10.0, 120.0)),
+            tri.vertices.map { it.pos },
+        )
+        assertFalse(editor.scene.constraints.all { it.error() < Solver.EPS }, "still unsatisfiable, but untouched")
     }
 }
