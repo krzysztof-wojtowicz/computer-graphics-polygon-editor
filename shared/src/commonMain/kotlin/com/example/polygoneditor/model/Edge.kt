@@ -18,4 +18,7 @@ class Edge(val start: Vertex, val end: Vertex, var shape: EdgeShape = EdgeShape.
 
     // Ends + control points – everything that moves when the edge is dragged
     val points: List<Point> get() = listOf(start, end) + controlPoints
+
+    // Distance between the ends (for a curve: the chord, not the curve length)
+    val length: Double get() = start.pos.distanceTo(end.pos)
 }
