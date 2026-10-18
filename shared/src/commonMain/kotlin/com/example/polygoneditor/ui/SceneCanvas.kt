@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -42,7 +43,7 @@ fun SceneCanvas(editor: Editor, modifier: Modifier = Modifier) {
                         val pos = toScene(event.changes.first().position)
                         when (event.type) {
                             PointerEventType.Press -> when {
-                                event.buttons.isPrimaryPressed -> editor.onPrimaryPress(pos)
+                                event.buttons.isPrimaryPressed -> editor.onPrimaryPress(pos, shift = event.keyboardModifiers.isShiftPressed)
                                 event.buttons.isSecondaryPressed -> editor.onSecondaryPress(pos)
                             }
 

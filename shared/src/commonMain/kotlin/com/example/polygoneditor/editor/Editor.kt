@@ -95,14 +95,37 @@ class Editor(val scene: Scene) {
         null -> Selection.None
     }
 
+    // Handles extension of selection with shift click
+    private fun extendSelection(hit: Hit?): Selection {
+        // For inside and vertex clicks
+        if (hit !is Hit.OnEdge) return hit.toSelection()
+
+        when (val s = selection) {
+            is Selection.None, is Selection.OnVertex -> return hit.toSelection()
+            is Selection.OnEdge -> {
+                if (hit.edge in s) return s
+
+                return Selection.TwoEdges(s.edge, hit.edge)
+            }
+
+            is Selection.TwoEdges -> {
+                if (hit.edge in s) return s
+
+                return Selection.TwoEdges(s.first, hit.edge)
+            }
+        }
+    }
+
     // ---- mouse actions ----
 
     // On left click
-    fun onPrimaryPress(p: Vec2) {
+    fun onPrimaryPress(p: Vec2, shift: Boolean = false) {
         message = null
         val hit = hitTest(p)
-        selection = hit.toSelection()
-        drag = when (hit) {
+
+        selection = if (shift) extendSelection(hit) else hit.toSelection()
+
+        drag = if (shift) null else when (hit) {
             is Hit.OnVertex -> Drag.MoveVertex(hit.vertex)
             is Hit.OnEdge -> Drag.MoveEdge(hit.edge, p)
             is Hit.Inside -> Drag.MovePolygon(hit.polygon, p)
@@ -137,6 +160,7 @@ class Editor(val scene: Scene) {
         drag = null
     }
 
+    // On right click
     fun onSecondaryPress(p: Vec2) {
         message = null
         when (val hit = hitTest(p)) {
