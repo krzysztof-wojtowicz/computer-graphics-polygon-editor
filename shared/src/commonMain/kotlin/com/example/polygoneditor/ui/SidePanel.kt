@@ -31,7 +31,6 @@ import com.example.polygoneditor.editor.Selection
 import com.example.polygoneditor.model.EdgeShape
 import com.example.polygoneditor.model.constraints.Constraint
 import com.example.polygoneditor.model.constraints.FixedLength
-import com.example.polygoneditor.model.constraints.Perpendicular
 
 @Composable
 fun SidePanel(editor: Editor, modifier: Modifier = Modifier) {
@@ -147,9 +146,10 @@ private fun ConstraintList(editor: Editor, constraints: List<Constraint>) {
     if (constraints.isEmpty()) {
         Text("none", color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+    val numbers = editor.scene.perpendicularNumbers()
     for (c in constraints) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("• ${c.label()}", Modifier.weight(1f)) // pushes the button to the right edge
+            Text("• ${c.label(numbers)}", Modifier.weight(1f)) // pushes the button to the right edge
             TextButton(onClick = { editor.removeConstraint(c) }) { Text("✕") }
         }
     }
@@ -204,9 +204,4 @@ private fun EdgeShape.label() = when (this) {
     EdgeShape.Line -> "Line"
     is EdgeShape.Bezier -> "Bézier"
     EdgeShape.Arc -> "Arc"
-}
-
-private fun Constraint.label() = when (this) {
-    is FixedLength -> "Length ${length.fmt()}"
-    is Perpendicular -> "Perpendicular"
 }
