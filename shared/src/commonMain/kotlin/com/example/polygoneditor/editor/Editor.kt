@@ -7,12 +7,16 @@ import androidx.compose.runtime.setValue
 import com.example.polygoneditor.geometry.Vec2
 import com.example.polygoneditor.geometry.distanceToSegment
 import com.example.polygoneditor.model.Edge
+import com.example.polygoneditor.model.EdgeShape
 import com.example.polygoneditor.model.Point
 import com.example.polygoneditor.model.Polygon
 import com.example.polygoneditor.model.Scene
 import com.example.polygoneditor.model.Vertex
+import com.example.polygoneditor.model.constraints.Constraint
+import com.example.polygoneditor.model.constraints.FixedLength
+import com.example.polygoneditor.model.constraints.Perpendicular
 import com.example.polygoneditor.solver.Locks
-import com.example.polygoneditor.solver.Solver.solve
+import com.example.polygoneditor.solver.Solver
 
 enum class LineAlgorithm { Library, Bresenham }
 
@@ -143,10 +147,75 @@ class Editor(val scene: Scene) {
         val s = scene.snapshot()
 
         points.forEach { it.pos += delta }
-        if (!solve(scene.constraints, Locks(locked = points.toSet()))) {
+        if (!Solver.solve(scene.constraints, Locks(locked = points.toSet()))) {
             scene.restore(s)
             polygon.translate(delta)
         }
+    }
+
+    // Adds new constraint and lets the solver fix the rest of the scene
+    // if it's not possible, restores state before addition
+    private fun addWithSolver(c: Constraint, replaced: List<Constraint> = emptyList()) {
+        val s = scene.snapshot()
+
+        replaced.forEach { scene.removeConstraint(it) }
+        scene.addConstraint(c)
+
+        if (!Solver.solve(scene.constraints, Locks.None)) {
+            scene.restore(s)
+            scene.removeConstraint(c)
+            replaced.forEach { scene.addConstraint(it) }
+            message = "Constraint conflicts with existing ones."
+            return
+        }
+
+        changed()
+    }
+
+    // Adds FixedLength constraint for given edge
+    fun setLength(edge: Edge, length: Double) {
+        message = null
+        if (length <= 0 || !length.isFinite()) {
+            message = "Length must be a positive number."
+            return
+        }
+        if (edge.shape !is EdgeShape.Line) {
+            message = "FixedLength constraint only applies to straight edges."
+            return
+        }
+
+        addWithSolver(
+            FixedLength(edge, length),
+            scene.constraintsOf(edge).filterIsInstance<FixedLength>()
+        )
+    }
+
+    // Adds Perpendicular constraint for two given edges
+    fun makePerpendicular(e1: Edge, e2: Edge) {
+        message = null
+        if (e1 === e2) {
+            message = "Select two different edges."
+            return
+        }
+        if (e1.shape !is EdgeShape.Line || e2.shape !is EdgeShape.Line) {
+            message = "Perpendicular constraint only applies to straight edges."
+            return
+        }
+        val duplicate = scene.constraints.filterIsInstance<Perpendicular>().any {
+            (it.e1 === e1 && it.e2 === e2) || (it.e1 === e2 && it.e2 === e1) // in either order
+        }
+        if (duplicate) {
+            message = "These edges are already perpendicular."
+            return
+        }
+
+        addWithSolver(Perpendicular(e1, e2))
+    }
+
+    // Removes constraint
+    fun removeConstraint(c: Constraint) {
+        scene.removeConstraint(c)
+        changed()
     }
 
     // ---- mouse actions ----
@@ -171,6 +240,7 @@ class Editor(val scene: Scene) {
         when (val d = drag) {
             is Drag.MoveVertex ->
                 moveWithSolver(listOf(d.vertex), p - d.vertex.pos, d.polygon)
+
             is Drag.MoveEdge -> {
                 moveWithSolver(d.edge.points, p - d.last, d.polygon)
                 d.last = p
