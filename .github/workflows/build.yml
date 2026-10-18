@@ -9,7 +9,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        os: [windows-latest, ubuntu-latest, macos-latest]   # macos-latest = Apple Silicon (arm64)
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -34,13 +34,14 @@ jobs:
       # Uruchamia gotową aplikację i sprawdza, czy po 15 s nadal działa (nie wysypała się przy starcie).
       - name: Smoke test
         run: |
-          APP_DIR=desktopApp/build/compose/binaries/main/app/PolygonEditor
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            "$APP_DIR/PolygonEditor.exe" &
-          else
-            command -v xvfb-run || sudo apt-get install -y xvfb
-            xvfb-run -a "$APP_DIR/bin/PolygonEditor" &
-          fi
+          APP_DIR=desktopApp/build/compose/binaries/main/app
+          case "$RUNNER_OS" in
+            Windows) "$APP_DIR/PolygonEditor/PolygonEditor.exe" & ;;
+            macOS)   "$APP_DIR/PolygonEditor.app/Contents/MacOS/PolygonEditor" & ;;
+            Linux)
+              command -v xvfb-run || sudo apt-get install -y xvfb
+              xvfb-run -a "$APP_DIR/PolygonEditor/bin/PolygonEditor" & ;;
+          esac
           PID=$!
           sleep 15
           if kill -0 $PID 2>/dev/null; then
@@ -50,7 +51,13 @@ jobs:
             wait $PID; echo "Aplikacja zakończyła się przedwcześnie (kod $?)"; exit 1
           fi
 
+      # upload-artifact gubi uprawnienia do wykonywania plików, więc na Linuksie i macOS
+      # pakujemy wynik do tar.gz – po rozpakowaniu aplikacja da się uruchomić.
+      - name: Archive (Linux, macOS)
+        if: runner.os != 'Windows'
+        run: tar -czf PolygonEditor-${{ runner.os }}.tar.gz -C desktopApp/build/compose/binaries/main/app .
+
       - uses: actions/upload-artifact@v4
         with:
           name: PolygonEditor-${{ runner.os }}
-          path: desktopApp/build/compose/binaries/main/app/
+          path: ${{ runner.os == 'Windows' && 'desktopApp/build/compose/binaries/main/app/' || format('PolygonEditor-{0}.tar.gz', runner.os) }}

@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.example.polygoneditor.geometry.Vec2
 import com.example.polygoneditor.geometry.distanceToSegment
+import com.example.polygoneditor.model.Edge
 import com.example.polygoneditor.model.Polygon
 import com.example.polygoneditor.model.Scene
 import com.example.polygoneditor.model.Vertex
@@ -15,13 +16,33 @@ sealed interface Hit {
     val polygon: Polygon
 
     data class OnVertex(override val polygon: Polygon, val vertex: Vertex) : Hit
-    data class OnEdge(override val polygon: Polygon, val edgeIndex: Int) : Hit
+    data class OnEdge(override val polygon: Polygon, val edge: Edge) : Hit
     data class Inside(override val polygon: Polygon) : Hit
+}
+
+/** What the user has selected */
+sealed interface Selection {
+    data object None : Selection
+    data class OnVertex(val polygon: Polygon, val vertex: Vertex) : Selection
+    data class OnEdge(val polygon: Polygon, val edge: Edge) : Selection
+    data class TwoEdges(val first: Edge, val second: Edge) : Selection
+
+    operator fun contains(e: Edge): Boolean = when (this) {
+        is None, is OnVertex -> false
+        is OnEdge -> e === edge
+        is TwoEdges -> e === first || e === second
+    }
+
+    operator fun contains(v: Vertex): Boolean = when (this) {
+        is None, is OnEdge, is TwoEdges -> false
+        is OnVertex -> v === vertex
+    }
 }
 
 /** What's being dragged */
 private sealed interface Drag {
     class MoveVertex(val vertex: Vertex) : Drag
+    class MoveEdge(val edge: Edge, var last: Vec2) : Drag
     class MovePolygon(val polygon: Polygon, var last: Vec2) : Drag
 }
 
@@ -40,6 +61,9 @@ class Editor(val scene: Scene) {
 
     private var drag: Drag? = null
 
+    var selection by mutableStateOf<Selection>(Selection.None)
+        private set
+
     // Gets the object which is under the cursor
     fun hitTest(p: Vec2): Hit? {
         // We look for vertex > edge > polygon in that order
@@ -53,11 +77,9 @@ class Editor(val scene: Scene) {
 
         // Edge
         for (poly in polygons) {
-            (0 until poly.edgeCount)
-                .firstOrNull { i ->
-                    val (a, b) = poly.edge(i)
-                    distanceToSegment(p, a.pos, b.pos) <= EDGE_HIT_TOLERANCE
-                }
+            poly.edges.firstOrNull {
+                distanceToSegment(p, it.start.pos, it.end.pos) <= EDGE_HIT_TOLERANCE
+            }
                 ?.let { return Hit.OnEdge(poly, it) }
         }
 
@@ -65,13 +87,61 @@ class Editor(val scene: Scene) {
         return polygons.firstOrNull { p in it }?.let { Hit.Inside(it) }
     }
 
+    // Helper fun that converts hit to selection
+    private fun Hit?.toSelection(): Selection = when (this) {
+        is Hit.OnVertex -> Selection.OnVertex(polygon, vertex)
+        is Hit.OnEdge -> Selection.OnEdge(polygon, edge)
+        is Hit.Inside -> Selection.None
+        null -> Selection.None
+    }
+
+    // Handles extension of selection with shift click
+    private fun extendSelection(hit: Hit?): Selection {
+        // Not an edge -> behaves like normal click
+        if (hit !is Hit.OnEdge) return hit.toSelection()
+
+        return when (val s = selection) {
+            is Selection.None, is Selection.OnVertex -> hit.toSelection()
+            is Selection.OnEdge -> {
+                if (hit.edge in s) s
+                else Selection.TwoEdges(s.edge, hit.edge)
+            }
+
+            is Selection.TwoEdges -> {
+                if (hit.edge in s) s
+                else Selection.TwoEdges(s.first, hit.edge)
+            }
+        }
+    }
+
+    // Deletes selected vertex
+    fun deleteSelected() {
+        val s = selection as? Selection.OnVertex ?: return
+
+        message = null
+        if (!scene.removeVertex(s.polygon, s.vertex)) {
+            message = "Polygon has to have at least ${Polygon.MIN_VERTICES} vertices."
+            return
+        }
+
+        selection = Selection.None
+        hovered = null
+        drag = null
+        changed()
+    }
+
     // ---- mouse actions ----
 
-    fun onPrimaryPress(p: Vec2) {
+    // On left click
+    fun onPrimaryPress(p: Vec2, shift: Boolean = false) {
         message = null
-        drag = when (val hit = hitTest(p)) {
+        val hit = hitTest(p)
+
+        selection = if (shift) extendSelection(hit) else hit.toSelection()
+
+        drag = if (shift) null else when (hit) {
             is Hit.OnVertex -> Drag.MoveVertex(hit.vertex)
-            is Hit.OnEdge -> Drag.MovePolygon(hit.polygon, p)
+            is Hit.OnEdge -> Drag.MoveEdge(hit.edge, p)
             is Hit.Inside -> Drag.MovePolygon(hit.polygon, p)
             null -> null
         }
@@ -80,10 +150,17 @@ class Editor(val scene: Scene) {
     fun onMove(p: Vec2) {
         when (val d = drag) {
             is Drag.MoveVertex -> d.vertex.pos = p
+            is Drag.MoveEdge -> {
+                val delta = p - d.last
+                d.edge.points.forEach { it.pos += delta }
+                d.last = p
+            }
+
             is Drag.MovePolygon -> {
                 d.polygon.translate(p - d.last)
                 d.last = p
             }
+
             null -> {
                 val h = hitTest(p)
                 if (h == hovered) return
@@ -97,17 +174,13 @@ class Editor(val scene: Scene) {
         drag = null
     }
 
-    fun onSecondaryPress(p: Vec2) {
-        message = null
-        when (val hit = hitTest(p)) {
-            is Hit.OnVertex ->
-                if (!hit.polygon.removeVertex(hit.vertex)) {
-                    message = "Polygon has to have at least ${Polygon.MIN_VERTICES} vertices."
-                }
-            is Hit.OnEdge -> hit.polygon.insertVertexOnEdge(hit.edgeIndex)
-            is Hit.Inside, null -> return
-        }
-        hovered = hitTest(p)
+    // On double left click – called right after onPrimaryPress of the second click
+    fun onDoubleClick(p: Vec2) {
+        val hit = hitTest(p) as? Hit.OnEdge ?: return
+        val v = scene.insertVertex(hit.polygon, hit.edge)
+        selection = Selection.OnVertex(hit.polygon, v)
+        drag = null           // MoveEdge from onPrimaryPress refers to the edge that no longer exists
+        hovered = hitTest(p)  // the old hovered edge no longer exists either
         changed()
     }
 
