@@ -1,5 +1,7 @@
 package com.example.polygoneditor.model
 
+import com.example.polygoneditor.geometry.Vec2
+
 sealed interface EdgeShape {
     data object Line : EdgeShape
 
@@ -21,4 +23,7 @@ class Edge(val start: Vertex, val end: Vertex, var shape: EdgeShape = EdgeShape.
 
     // Distance between the ends (for a curve: the chord, not the curve length)
     val length: Double get() = start.pos.distanceTo(end.pos)
+
+    // Returns vector representing edge
+    val vector: Vec2 get() = end.pos - start.pos
 }

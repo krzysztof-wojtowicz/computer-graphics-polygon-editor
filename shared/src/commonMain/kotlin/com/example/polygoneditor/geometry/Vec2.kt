@@ -52,3 +52,5 @@ fun containsEvenOdd(points: List<Vec2>, p: Vec2): Boolean {
     }
     return inside
 }
+
+fun Vec2.perpendicular() = Vec2(-y, x)
