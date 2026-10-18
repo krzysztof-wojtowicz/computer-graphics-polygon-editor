@@ -2,13 +2,22 @@ package com.example.polygoneditor.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.isSecondaryPressed
@@ -24,7 +33,6 @@ private val FillColor = Color(0x223B82F6)
 private val EdgeColor = Color(0xFF1F2937)
 private val VertexColor = Color(0xFFDC2626)
 private val HighlightColor = Color(0xFFF59E0B)
-
 private val SelectedColor = Color(0xFF2563EB)
 
 // Max distance (in dp) between the two presses of a double click
@@ -35,10 +43,24 @@ private fun Density.toScreen(v: Vec2) = Offset((v.x * density).toFloat(), (v.y *
 
 @Composable
 fun SceneCanvas(editor: Editor, modifier: Modifier = Modifier) {
+    // remember: SceneCanvas runs again on every recomposition, the requester has to survive it
+    val focusRequester = remember { FocusRequester() }
+
     Canvas(
         modifier
             .clipToBounds()
             .background(Color.White)
+            .onKeyEvent { e ->
+                // macOS "delete" key is Backspace, fn+delete is Delete
+                if (e.type == KeyEventType.KeyDown && (e.key == Key.Delete || e.key == Key.Backspace)) {
+                    editor.deleteSelected()
+                    true
+                } else {
+                    false
+                }
+            }
+            .focusRequester(focusRequester) // must come before focusable()
+            .focusable()
             .pointerInput(editor) {
                 awaitPointerEventScope {
                     var lastPressTime = 0L
@@ -47,6 +69,8 @@ fun SceneCanvas(editor: Editor, modifier: Modifier = Modifier) {
                     while (true) {
                         val event = awaitPointerEvent()
                         val pos = toScene(event.changes.first().position)
+                        // Any click on the canvas takes keyboard focus (e.g. away from a text field in the panel)
+                        if (event.type == PointerEventType.Press) focusRequester.requestFocus()
                         when (event.type) {
                             PointerEventType.Press -> when {
                                 event.buttons.isPrimaryPressed -> {

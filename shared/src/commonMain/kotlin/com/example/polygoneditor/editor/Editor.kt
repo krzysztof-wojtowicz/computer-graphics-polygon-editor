@@ -114,6 +114,21 @@ class Editor(val scene: Scene) {
         }
     }
 
+    // Deletes selected vertex
+    fun deleteSelected() {
+        val s = selection as? Selection.OnVertex ?: return
+
+        message = null
+        if (!scene.removeVertex(s.polygon, s.vertex)) {
+            message = "Polygon has to have at least ${Polygon.MIN_VERTICES} vertices."
+            return
+        }
+
+        selection = Selection.None
+        hovered = null
+        changed()
+    }
+
     // ---- mouse actions ----
 
     // On left click
