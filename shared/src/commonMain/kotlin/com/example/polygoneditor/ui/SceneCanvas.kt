@@ -27,6 +27,8 @@ import androidx.compose.ui.unit.dp
 import com.example.polygoneditor.editor.Editor
 import com.example.polygoneditor.editor.Hit
 import com.example.polygoneditor.geometry.Vec2
+import com.example.polygoneditor.render.BresenhamPainter
+import com.example.polygoneditor.render.Painter
 
 private val FillColor = Color(0x223B82F6)
 private val EdgeColor = Color(0xFF1F2937)
@@ -80,8 +82,8 @@ fun SceneCanvas(editor: Editor, modifier: Modifier = Modifier) {
                                     // Double click = second press soon after the previous one, near the same spot
                                     val last = lastPressPos
                                     val isDoubleClick = !shift && last != null &&
-                                        time - lastPressTime <= viewConfiguration.doubleTapTimeoutMillis &&
-                                        pos.distanceTo(last) <= DOUBLE_CLICK_SLOP
+                                            time - lastPressTime <= viewConfiguration.doubleTapTimeoutMillis &&
+                                            pos.distanceTo(last) <= DOUBLE_CLICK_SLOP
 
                                     if (isDoubleClick) {
                                         editor.onDoubleClick(pos)
@@ -106,6 +108,7 @@ fun SceneCanvas(editor: Editor, modifier: Modifier = Modifier) {
         val selection = editor.selection
         val stroke = 2.dp.toPx()
         val vertexRadius = 5.dp.toPx()
+        val painter: Painter = BresenhamPainter(this)
 
         // Draw each polygon
         for (poly in editor.scene.polygons) {
@@ -127,14 +130,14 @@ fun SceneCanvas(editor: Editor, modifier: Modifier = Modifier) {
             for (edge in poly.edges) {
                 val isHovered = hovered is Hit.OnEdge && hovered.polygon === poly && hovered.edge == edge
                 val isSelected = edge in selection
-                drawLine(
+                painter.line(
+                    toScreen(edge.start.pos),
+                    toScreen(edge.end.pos),
                     color = when {
                         isSelected -> SelectedColor
                         isHovered -> HighlightColor
                         else -> EdgeColor
-                    },
-                    toScreen(edge.start.pos), toScreen(edge.end.pos),
-                    strokeWidth = if (isHovered || isSelected) stroke * 2 else stroke,
+                    }
                 )
             }
 
