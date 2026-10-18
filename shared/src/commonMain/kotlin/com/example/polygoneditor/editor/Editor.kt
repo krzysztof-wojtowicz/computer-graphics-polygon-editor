@@ -126,6 +126,7 @@ class Editor(val scene: Scene) {
 
         selection = Selection.None
         hovered = null
+        drag = null
         changed()
     }
 
@@ -180,23 +181,6 @@ class Editor(val scene: Scene) {
         selection = Selection.OnVertex(hit.polygon, v)
         drag = null           // MoveEdge from onPrimaryPress refers to the edge that no longer exists
         hovered = hitTest(p)  // the old hovered edge no longer exists either
-        changed()
-    }
-
-    // On right click
-    fun onSecondaryPress(p: Vec2) {
-        message = null
-        when (val hit = hitTest(p)) {
-            is Hit.OnVertex ->
-                if (!scene.removeVertex(hit.polygon, hit.vertex)) {
-                    message = "Polygon has to have at least ${Polygon.MIN_VERTICES} vertices."
-                }
-
-            is Hit.OnEdge -> scene.insertVertex(hit.polygon, hit.edge)
-            is Hit.Inside, null -> return
-        }
-        hovered = hitTest(p)
-        selection = Selection.None
         changed()
     }
 

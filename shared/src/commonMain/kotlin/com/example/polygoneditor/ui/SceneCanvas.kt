@@ -20,7 +20,6 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isPrimaryPressed
-import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Density
@@ -92,8 +91,6 @@ fun SceneCanvas(editor: Editor, modifier: Modifier = Modifier) {
                                         lastPressPos = pos
                                     }
                                 }
-
-                                event.buttons.isSecondaryPressed -> editor.onSecondaryPress(pos)
                             }
 
                             PointerEventType.Move -> editor.onMove(pos)
