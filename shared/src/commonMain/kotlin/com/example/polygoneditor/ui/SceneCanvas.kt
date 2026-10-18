@@ -9,10 +9,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -22,12 +25,19 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.polygoneditor.editor.Editor
 import com.example.polygoneditor.editor.Hit
 import com.example.polygoneditor.editor.LineAlgorithm
 import com.example.polygoneditor.geometry.Vec2
+import com.example.polygoneditor.geometry.midpoint
+import com.example.polygoneditor.geometry.perpendicular
 import com.example.polygoneditor.render.BresenhamPainter
 import com.example.polygoneditor.render.LibraryPainter
 import com.example.polygoneditor.render.Painter
@@ -37,6 +47,11 @@ private val EdgeColor = Color(0xFF1F2937)
 private val VertexColor = Color(0xFFDC2626)
 private val HighlightColor = Color(0xFFF59E0B)
 private val SelectedColor = Color(0xFF2563EB)
+private val LabelBackground = Color.White.copy(alpha = 0.85f)
+private val LabelStyle = TextStyle(fontSize = 11.sp, color = Color(0xFF7C3AED))
+
+// Distance (in dp) of a constraint icon from the middle of its edge
+private const val ICON_OFFSET = 14.0
 
 // Max distance (in dp) between the two presses of a double click
 private const val DOUBLE_CLICK_SLOP = 4.0
@@ -48,6 +63,8 @@ private fun Density.toScreen(v: Vec2) = Offset((v.x * density).toFloat(), (v.y *
 fun SceneCanvas(editor: Editor, modifier: Modifier = Modifier) {
     // remember: SceneCanvas runs again on every recomposition, the requester has to survive it
     val focusRequester = remember { FocusRequester() }
+    // @Composable, so it can't be created inside the draw block
+    val textMeasurer = rememberTextMeasurer()
 
     Canvas(
         modifier
@@ -161,5 +178,39 @@ fun SceneCanvas(editor: Editor, modifier: Modifier = Modifier) {
                 )
             }
         }
+
+        // Constraint icons – after all polygons, so nothing drawn later covers them
+        val numbers = editor.scene.perpendicularNumbers()
+        for (poly in editor.scene.polygons) {
+            for (edge in poly.edges) {
+                val constraints = editor.scene.constraintsOf(edge)
+                if (constraints.isEmpty() || edge.length < 1e-9) continue // zero-length edge has no normal
+
+                // Midpoint moved along the normal, to the outside of the polygon
+                val mid = midpoint(edge.start.pos, edge.end.pos)
+                val normal = edge.vector.perpendicular() / edge.length
+                val candidate = mid + normal * ICON_OFFSET
+                val center = if (candidate in poly) mid - normal * ICON_OFFSET else candidate
+
+                drawLabel(textMeasurer, constraints.joinToString(" ") { it.shortLabel(numbers) }, toScreen(center))
+            }
+        }
     }
+}
+
+// Text centered at `center` on a light background, so it stays readable over fills and edges
+private fun DrawScope.drawLabel(textMeasurer: TextMeasurer, text: String, center: Offset) {
+    val layout = textMeasurer.measure(text, LabelStyle)
+    val width = layout.size.width.toFloat()
+    val height = layout.size.height.toFloat()
+    val topLeft = center - Offset(width / 2, height / 2)
+    val pad = 2.dp.toPx()
+
+    drawRoundRect(
+        LabelBackground,
+        topLeft = topLeft - Offset(pad, pad),
+        size = Size(width + 2 * pad, height + 2 * pad),
+        cornerRadius = CornerRadius(2 * pad),
+    )
+    drawText(layout, topLeft = topLeft)
 }

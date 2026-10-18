@@ -6,8 +6,14 @@ import com.example.polygoneditor.geometry.Vec2
 import com.example.polygoneditor.model.ControlPoint
 import com.example.polygoneditor.model.EdgeShape
 import com.example.polygoneditor.model.Scene
+import com.example.polygoneditor.model.constraints.FixedLength
+import com.example.polygoneditor.model.constraints.Perpendicular
+import com.example.polygoneditor.solver.Solver
+import com.example.polygoneditor.solver.error
 import kotlin.test.Test
+import kotlin.math.abs
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -336,5 +342,251 @@ class EditorTest {
         editor.onRelease()
 
         assertEquals(Vec2(100.0, 0.0), v1.pos, "removed vertex must not follow the mouse")
+    }
+
+    // ---- dragging with constraints (solver) ----
+
+    private fun assertSatisfied(editor: Editor) {
+        editor.scene.constraints.forEach {
+            assertTrue(it.error() < Solver.EPS, "constraint not satisfied, error ${it.error()}")
+        }
+    }
+
+    private fun assertClose(expected: Vec2, actual: Vec2) {
+        assertTrue(abs(expected.x - actual.x) < 1e-9 && abs(expected.y - actual.y) < 1e-9, "expected $expected, got $actual")
+    }
+
+    @Test
+    fun draggedVertexIsUnderTheCursorAndKeepsLengthsOfItsEdges() {
+        val editor = editorWithSquare()
+        val poly = editor.scene.polygons[0]
+        val (e0, _, _, e3) = poly.edges // the two edges of v0
+        editor.scene.addConstraint(FixedLength(e0, 100.0))
+        editor.scene.addConstraint(FixedLength(e3, 100.0))
+
+        editor.drag(0, 0, -20, -10)
+
+        assertEquals(Vec2(-20.0, -10.0), poly.vertices[0].pos)
+        assertSatisfied(editor)
+    }
+
+    @Test
+    fun draggedEdgeMovesExactlyByDeltaAndKeepsPerpendicularNeighbour() {
+        val editor = editorWithSquare()
+        val poly = editor.scene.polygons[0]
+        val (e0, e1) = poly.edges
+        editor.scene.addConstraint(Perpendicular(e0, e1))
+
+        editor.drag(50, 0, 70, 0) // e0 sideways: e1 would lean without the solver
+
+        assertClose(Vec2(20.0, 0.0), e0.start.pos)
+        assertClose(Vec2(120.0, 0.0), e0.end.pos)
+        assertSatisfied(editor)
+        assertTrue(abs(e1.vector.x) < Solver.EPS, "e1 should be vertical again, got ${e1.vector}")
+    }
+
+    @Test
+    fun draggingInOnePolygonRotatesConstrainedEdgeOfAnother() {
+        val editor = editorWithSquare()
+        val square = editor.scene.polygons[0]
+        val other = editor.scene.polygon(200 to 0, 200 to 100, 300 to 100) // e0 vertical
+        editor.scene.addConstraint(Perpendicular(square.edges[0], other.edges[0]))
+
+        editor.drag(100, 0, 100, 30) // tilts the square's e0
+
+        assertEquals(Vec2(100.0, 30.0), square.vertices[1].pos)
+        assertSatisfied(editor)
+        assertTrue(abs(other.edges[0].vector.x) > 1.0, "other polygon's edge should have rotated")
+    }
+
+    @Test
+    fun draggingWholePolygonDoesNotTouchConstrainedOtherPolygon() {
+        val editor = editorWithSquare()
+        val square = editor.scene.polygons[0]
+        val other = editor.scene.polygon(200 to 0, 200 to 100, 300 to 100)
+        editor.scene.addConstraint(Perpendicular(square.edges[0], other.edges[0]))
+        val otherBefore = other.vertices.map { it.pos }
+
+        editor.drag(50, 50, 80, 70)
+
+        assertEquals(squarePositions.map { it + Vec2(30.0, 20.0) }, editor.vertexPositions())
+        assertEquals(otherBefore, other.vertices.map { it.pos })
+    }
+
+    @Test
+    fun whenSolverFailsTheWholePolygonFollowsTheCursor() {
+        // 1 + 1 < 5: no triangle satisfies these – added directly to the scene to force a solver failure
+        val editor = Editor(Scene().apply { polygon(0 to 0, 100 to 0, 0 to 100) })
+        val tri = editor.scene.polygons[0]
+        val (e0, e1, e2) = tri.edges
+        listOf(FixedLength(e0, 1.0), FixedLength(e1, 1.0), FixedLength(e2, 5.0)).forEach(editor.scene::addConstraint)
+
+        editor.drag(100, 0, 110, 20)
+
+        // shape unchanged, everything moved by the drag delta (10, 20)
+        assertEquals(
+            listOf(Vec2(10.0, 20.0), Vec2(110.0, 20.0), Vec2(10.0, 120.0)),
+            tri.vertices.map { it.pos },
+        )
+        assertFalse(editor.scene.constraints.all { it.error() < Solver.EPS }, "still unsatisfiable, but untouched")
+    }
+
+    // ---- adding and removing constraints ----
+
+    private fun editorWithTriangle() = Editor(Scene().apply { polygon(0 to 0, 100 to 0, 30 to 80) })
+
+    private fun Editor.allPositions() = scene.allPoints().map { it.pos }
+
+    @Test
+    fun setLengthChangesTheEdgeSymmetricallyAndAddsTheConstraint() {
+        val editor = editorWithSquare()
+        val e0 = editor.scene.polygons[0].edges[0]
+        val versionBefore = editor.version
+
+        editor.setLength(e0, 60.0)
+
+        assertClose(Vec2(20.0, 0.0), e0.start.pos) // both ends free -> each moves half
+        assertClose(Vec2(80.0, 0.0), e0.end.pos)
+        val c = editor.scene.constraintsOf(e0).single() as FixedLength
+        assertEquals(60.0, c.length)
+        assertNull(editor.message)
+        assertTrue(editor.version > versionBefore)
+    }
+
+    @Test
+    fun secondLengthOnTheSameEdgeReplacesTheFirst() {
+        val editor = editorWithSquare()
+        val e0 = editor.scene.polygons[0].edges[0]
+
+        editor.setLength(e0, 60.0)
+        editor.setLength(e0, 80.0)
+
+        val c = editor.scene.constraints.single() as FixedLength
+        assertEquals(80.0, c.length)
+        assertSatisfied(editor)
+    }
+
+    @Test
+    fun conflictingLengthIsRejectedAndEverythingGoesBack() {
+        val editor = editorWithTriangle()
+        val (e0, e1, e2) = editor.scene.polygons[0].edges
+        editor.setLength(e0, 100.0)
+        editor.setLength(e1, 100.0)
+        val constraintsBefore = editor.scene.constraints.toList()
+        val positionsBefore = editor.allPositions()
+        val versionBefore = editor.version
+
+        editor.setLength(e2, 300.0) // 100 + 100 < 300: no such triangle
+
+        assertEquals(positionsBefore, editor.allPositions())
+        assertEquals(constraintsBefore, editor.scene.constraints)
+        assertNotNull(editor.message)
+        assertEquals(versionBefore, editor.version, "nothing changed, no redraw needed")
+    }
+
+    @Test
+    fun conflictingReplacementBringsTheOldLengthBack() {
+        val editor = editorWithTriangle()
+        val (e0, e1, e2) = editor.scene.polygons[0].edges
+        listOf(e0, e1, e2).forEach { editor.setLength(it, 100.0) } // equilateral
+        val oldLength = editor.scene.constraintsOf(e0).single()
+
+        editor.setLength(e0, 300.0)
+
+        assertNotNull(editor.message)
+        assertEquals(listOf(oldLength), editor.scene.constraintsOf(e0))
+        assertEquals(3, editor.scene.constraints.size)
+        assertSatisfied(editor)
+    }
+
+    @Test
+    fun makePerpendicularMakesARightAngle() {
+        val editor = editorWithTriangle()
+        val (e0, e1) = editor.scene.polygons[0].edges
+
+        editor.makePerpendicular(e0, e1)
+
+        assertEquals(1, editor.scene.constraints.size)
+        assertSatisfied(editor)
+        assertNull(editor.message)
+    }
+
+    @Test
+    fun perpendicularConflictingWithLengthsIsRejected() {
+        val editor = editorWithTriangle()
+        val (e0, e1, e2) = editor.scene.polygons[0].edges
+        listOf(e0, e1, e2).forEach { editor.setLength(it, 100.0) } // equilateral: all angles 60°
+        val positionsBefore = editor.allPositions()
+
+        editor.makePerpendicular(e0, e1)
+
+        assertNotNull(editor.message)
+        assertEquals(3, editor.scene.constraints.size)
+        assertEquals(positionsBefore, editor.allPositions())
+    }
+
+    @Test
+    fun perpendicularNeedsTwoDifferentEdges() {
+        val editor = editorWithSquare()
+        val e0 = editor.scene.polygons[0].edges[0]
+
+        editor.makePerpendicular(e0, e0)
+
+        assertNotNull(editor.message)
+        assertTrue(editor.scene.constraints.isEmpty())
+    }
+
+    @Test
+    fun duplicatePerpendicularIsRejectedInEitherOrder() {
+        val editor = editorWithSquare()
+        val (e0, e1) = editor.scene.polygons[0].edges
+        editor.makePerpendicular(e0, e1)
+
+        editor.makePerpendicular(e0, e1)
+        assertNotNull(editor.message)
+        editor.makePerpendicular(e1, e0)
+        assertNotNull(editor.message)
+
+        assertEquals(1, editor.scene.constraints.size)
+    }
+
+    @Test
+    fun invalidLengthIsRejectedWithoutTouchingAnything() {
+        val editor = editorWithSquare()
+        val e0 = editor.scene.polygons[0].edges[0]
+        val versionBefore = editor.version
+
+        for (length in listOf(0.0, -5.0, Double.NaN, Double.POSITIVE_INFINITY)) {
+            editor.setLength(e0, length)
+            assertNotNull(editor.message, "length $length should be rejected")
+        }
+
+        assertTrue(editor.scene.constraints.isEmpty())
+        assertEquals(squarePositions, editor.vertexPositions())
+        assertEquals(versionBefore, editor.version)
+    }
+
+    @Test
+    fun successfulActionClearsAnOldMessage() {
+        val editor = editorWithSquare()
+        val e0 = editor.scene.polygons[0].edges[0]
+
+        editor.setLength(e0, -1.0)
+        editor.setLength(e0, 50.0)
+
+        assertNull(editor.message)
+    }
+
+    @Test
+    fun removeConstraintRemovesItAndMovesNothing() {
+        val editor = editorWithSquare()
+        val e0 = editor.scene.polygons[0].edges[0]
+        editor.setLength(e0, 60.0)
+        val positionsBefore = editor.allPositions()
+
+        editor.removeConstraint(editor.scene.constraints.single())
+
+        assertTrue(editor.scene.constraints.isEmpty())
+        assertEquals(positionsBefore, editor.allPositions())
     }
 }

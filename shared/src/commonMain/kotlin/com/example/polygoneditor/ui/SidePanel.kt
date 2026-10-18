@@ -15,7 +15,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -26,8 +31,6 @@ import com.example.polygoneditor.editor.Selection
 import com.example.polygoneditor.model.EdgeShape
 import com.example.polygoneditor.model.constraints.Constraint
 import com.example.polygoneditor.model.constraints.FixedLength
-import com.example.polygoneditor.model.constraints.Perpendicular
-import kotlin.math.round
 
 @Composable
 fun SidePanel(editor: Editor, modifier: Modifier = Modifier) {
@@ -81,27 +84,40 @@ private fun VertexSection(editor: Editor, s: Selection.OnVertex) {
 private fun EdgeSection(editor: Editor, s: Selection.OnEdge) {
     editor.version // length changes while dragging – redraw on every model change
 
+    // View-only state: forgotten when the selection changes (EdgeSection leaves the composition)
+    var showLengthDialog by remember { mutableStateOf(false) }
+
     val edge = s.edge
+    val constraints = editor.scene.constraintsOf(edge)
     Header("Edge")
     Text("Length: ${edge.length.fmt()}")
     Text("Shape: ${edge.shape.label()}")
 
     Gap()
-    Text("Constraints", style = MaterialTheme.typography.titleSmall)
-    val constraints = editor.scene.constraintsOf(edge)
-    if (constraints.isEmpty()) {
-        Text("none", color = MaterialTheme.colorScheme.onSurfaceVariant)
-    } else {
-        constraints.forEach { Text("• ${it.label()}") }
-    }
+    ConstraintList(editor, constraints)
 
-    // Future actions – enabled together with the solver and curves
     Gap()
-    PlaceholderButton("Set length…")
+    Button(onClick = { showLengthDialog = true }, modifier = Modifier.fillMaxWidth()) {
+        Text("Set length…")
+    }
+    // Future actions – enabled together with curves
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         PlaceholderButton("Line", Modifier.weight(1f))
         PlaceholderButton("Bézier", Modifier.weight(1f))
         PlaceholderButton("Arc", Modifier.weight(1f))
+    }
+
+    // No show()/hide() in Compose: the dialog exists only while the condition holds
+    if (showLengthDialog) {
+        LengthDialog(
+            // the length already set, otherwise the current one
+            initial = constraints.filterIsInstance<FixedLength>().firstOrNull()?.length ?: edge.length,
+            onConfirm = {
+                editor.setLength(edge, it)
+                showLengthDialog = false
+            },
+            onDismiss = { showLengthDialog = false },
+        )
     }
 }
 
@@ -114,7 +130,29 @@ private fun TwoEdgesSection(editor: Editor, s: Selection.TwoEdges) {
     Text("Second length: ${s.second.length.fmt()}")
 
     Gap()
-    PlaceholderButton("Make perpendicular")
+    // A constraint between the two edges would appear twice – distinct() keeps one
+    ConstraintList(editor, (editor.scene.constraintsOf(s.first) + editor.scene.constraintsOf(s.second)).distinct())
+
+    Gap()
+    // Order matters: the second edge is the one that rotates
+    Button(onClick = { editor.makePerpendicular(s.first, s.second) }, modifier = Modifier.fillMaxWidth()) {
+        Text("Make perpendicular")
+    }
+}
+
+@Composable
+private fun ConstraintList(editor: Editor, constraints: List<Constraint>) {
+    Text("Constraints", style = MaterialTheme.typography.titleSmall)
+    if (constraints.isEmpty()) {
+        Text("none", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    val numbers = editor.scene.perpendicularNumbers()
+    for (c in constraints) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("• ${c.label(numbers)}", Modifier.weight(1f)) // pushes the button to the right edge
+            TextButton(onClick = { editor.removeConstraint(c) }) { Text("✕") }
+        }
+    }
 }
 
 // Always visible, independent of the selection
@@ -162,16 +200,8 @@ private fun PlaceholderButton(text: String, modifier: Modifier = Modifier.fillMa
 
 // ---- text helpers ----
 
-// One decimal place; String.format is JVM-only, so it can't be used in commonMain
-private fun Double.fmt() = (round(this * 10) / 10).toString()
-
 private fun EdgeShape.label() = when (this) {
     EdgeShape.Line -> "Line"
     is EdgeShape.Bezier -> "Bézier"
     EdgeShape.Arc -> "Arc"
-}
-
-private fun Constraint.label() = when (this) {
-    is FixedLength -> "Length ${length.fmt()}"
-    is Perpendicular -> "Perpendicular"
 }
