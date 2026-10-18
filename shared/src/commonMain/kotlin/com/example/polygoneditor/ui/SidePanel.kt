@@ -1,6 +1,7 @@
 package com.example.polygoneditor.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,11 +13,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.example.polygoneditor.editor.Editor
+import com.example.polygoneditor.editor.LineAlgorithm
 import com.example.polygoneditor.editor.Selection
 import com.example.polygoneditor.model.EdgeShape
 import com.example.polygoneditor.model.constraints.Constraint
@@ -40,6 +45,7 @@ fun SidePanel(editor: Editor, modifier: Modifier = Modifier) {
             is Selection.TwoEdges -> TwoEdgesSection(editor, s)
         }
         Spacer(Modifier.weight(1f))
+        LineAlgorithmSection(editor)
         editor.message?.let {
             Text(it, color = MaterialTheme.colorScheme.error)
         }
@@ -109,6 +115,29 @@ private fun TwoEdgesSection(editor: Editor, s: Selection.TwoEdges) {
 
     Gap()
     PlaceholderButton("Make perpendicular")
+}
+
+// Always visible, independent of the selection
+@Composable
+private fun LineAlgorithmSection(editor: Editor) {
+    Text("Line drawing", style = MaterialTheme.typography.titleSmall)
+    for (algorithm in LineAlgorithm.entries) {
+        val selected = editor.lineAlgorithm == algorithm
+        // The whole row is clickable, not only the circle
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .selectable(
+                    selected = selected,
+                    onClick = { editor.lineAlgorithm = algorithm },
+                    role = Role.RadioButton,
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            RadioButton(selected = selected, onClick = null) // the row handles the click
+            Text(algorithm.name, Modifier.padding(start = 8.dp))
+        }
+    }
 }
 
 // ---- small building blocks ----

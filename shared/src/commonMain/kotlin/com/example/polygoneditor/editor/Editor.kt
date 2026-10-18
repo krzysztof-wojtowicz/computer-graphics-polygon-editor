@@ -11,6 +11,8 @@ import com.example.polygoneditor.model.Polygon
 import com.example.polygoneditor.model.Scene
 import com.example.polygoneditor.model.Vertex
 
+enum class LineAlgorithm { Library, Bresenham }
+
 /** What's under the cursor */
 sealed interface Hit {
     val polygon: Polygon
@@ -63,6 +65,8 @@ class Editor(val scene: Scene) {
 
     var selection by mutableStateOf<Selection>(Selection.None)
         private set
+
+    var lineAlgorithm by mutableStateOf(LineAlgorithm.Library)
 
     // Gets the object which is under the cursor
     fun hitTest(p: Vec2): Hit? {

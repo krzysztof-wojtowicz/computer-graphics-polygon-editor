@@ -26,8 +26,10 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.example.polygoneditor.editor.Editor
 import com.example.polygoneditor.editor.Hit
+import com.example.polygoneditor.editor.LineAlgorithm
 import com.example.polygoneditor.geometry.Vec2
 import com.example.polygoneditor.render.BresenhamPainter
+import com.example.polygoneditor.render.LibraryPainter
 import com.example.polygoneditor.render.Painter
 
 private val FillColor = Color(0x223B82F6)
@@ -106,9 +108,12 @@ fun SceneCanvas(editor: Editor, modifier: Modifier = Modifier) {
         editor.version // reading this state subscribes the canvas to redraw on every model change
         val hovered = editor.hovered
         val selection = editor.selection
-        val stroke = 2.dp.toPx()
+        val stroke = 1.dp.toPx()
         val vertexRadius = 5.dp.toPx()
-        val painter: Painter = BresenhamPainter(this)
+        val painter: Painter = when (editor.lineAlgorithm) {
+            LineAlgorithm.Library -> LibraryPainter(this, stroke)
+            LineAlgorithm.Bresenham -> BresenhamPainter(this)
+        }
 
         // Draw each polygon
         for (poly in editor.scene.polygons) {
