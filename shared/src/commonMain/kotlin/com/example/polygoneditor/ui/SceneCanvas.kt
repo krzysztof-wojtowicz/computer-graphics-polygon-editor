@@ -43,7 +43,8 @@ fun SceneCanvas(editor: Editor, modifier: Modifier = Modifier) {
                         val pos = toScene(event.changes.first().position)
                         when (event.type) {
                             PointerEventType.Press -> when {
-                                event.buttons.isPrimaryPressed -> editor.onPrimaryPress(pos, shift = event.keyboardModifiers.isShiftPressed)
+                                event.buttons.isPrimaryPressed ->
+                                    editor.onPrimaryPress(pos, shift = event.keyboardModifiers.isShiftPressed)
                                 event.buttons.isSecondaryPressed -> editor.onSecondaryPress(pos)
                             }
 

@@ -97,21 +97,19 @@ class Editor(val scene: Scene) {
 
     // Handles extension of selection with shift click
     private fun extendSelection(hit: Hit?): Selection {
-        // For inside and vertex clicks
+        // Not an edge -> behaves like normal click
         if (hit !is Hit.OnEdge) return hit.toSelection()
 
-        when (val s = selection) {
-            is Selection.None, is Selection.OnVertex -> return hit.toSelection()
+        return when (val s = selection) {
+            is Selection.None, is Selection.OnVertex -> hit.toSelection()
             is Selection.OnEdge -> {
-                if (hit.edge in s) return s
-
-                return Selection.TwoEdges(s.edge, hit.edge)
+                if (hit.edge in s) s
+                else Selection.TwoEdges(s.edge, hit.edge)
             }
 
             is Selection.TwoEdges -> {
-                if (hit.edge in s) return s
-
-                return Selection.TwoEdges(s.first, hit.edge)
+                if (hit.edge in s) s
+                else Selection.TwoEdges(s.first, hit.edge)
             }
         }
     }
