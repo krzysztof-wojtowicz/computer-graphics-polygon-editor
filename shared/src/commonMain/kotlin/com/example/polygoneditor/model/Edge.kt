@@ -1,6 +1,8 @@
 package com.example.polygoneditor.model
 
 import com.example.polygoneditor.geometry.Vec2
+import com.example.polygoneditor.geometry.bezierPoints
+import com.example.polygoneditor.geometry.bezierSegments
 
 sealed interface EdgeShape {
     data object Line : EdgeShape
@@ -26,4 +28,14 @@ class Edge(val start: Vertex, val end: Vertex, var shape: EdgeShape = EdgeShape.
 
     // Returns vector representing edge
     val vector: Vec2 get() = end.pos - start.pos
+
+    // Returns list of points representing given edge
+    // for bezier it's list of calculated bezier points
+    // for line its start & end
+    val polyline: List<Vec2> get() = when (val s = shape) {
+        is EdgeShape.Bezier -> bezierPoints(start.pos, s.c1.pos, s.c2.pos, end.pos,
+            bezierSegments(start.pos, s.c1.pos, s.c2.pos, end.pos)
+        )
+        EdgeShape.Line, EdgeShape.Arc -> listOf(start.pos, end.pos) // TODO() later for arc
+    }
 }

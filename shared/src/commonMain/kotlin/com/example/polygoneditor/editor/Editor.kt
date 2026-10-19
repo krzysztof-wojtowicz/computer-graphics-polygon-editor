@@ -28,6 +28,7 @@ sealed interface Hit {
     data class OnVertex(override val polygon: Polygon, val vertex: Vertex) : Hit
     data class OnEdge(override val polygon: Polygon, val edge: Edge) : Hit
     data class Inside(override val polygon: Polygon) : Hit
+    data class OnControlPoint(override val polygon: Polygon, val edge: Edge, val point: ControlPoint) : Hit
 }
 
 /** What the user has selected */
@@ -36,16 +37,22 @@ sealed interface Selection {
     data class OnVertex(val polygon: Polygon, val vertex: Vertex) : Selection
     data class OnEdge(val polygon: Polygon, val edge: Edge) : Selection
     data class TwoEdges(val first: Edge, val second: Edge) : Selection
+    data class OnControlPoint(val polygon: Polygon, val edge: Edge, val point: ControlPoint) : Selection
 
     operator fun contains(e: Edge): Boolean = when (this) {
-        is None, is OnVertex -> false
+        is None, is OnVertex, is OnControlPoint -> false
         is OnEdge -> e === edge
         is TwoEdges -> e === first || e === second
     }
 
     operator fun contains(v: Vertex): Boolean = when (this) {
-        is None, is OnEdge, is TwoEdges -> false
+        is None, is OnEdge, is TwoEdges, is OnControlPoint -> false
         is OnVertex -> v === vertex
+    }
+
+    operator fun contains(c: ControlPoint): Boolean = when (this) {
+        is None, is OnEdge, is TwoEdges, is OnVertex -> false
+        is OnControlPoint -> c === point
     }
 }
 
@@ -54,6 +61,7 @@ private sealed interface Drag {
     class MoveVertex(val vertex: Vertex, val polygon: Polygon) : Drag
     class MoveEdge(val edge: Edge, var last: Vec2, val polygon: Polygon) : Drag
     class MovePolygon(val polygon: Polygon, var last: Vec2) : Drag
+    class MoveControlPoint(val point: ControlPoint, val edge: Edge, val polygon: Polygon) : Drag
 }
 
 /**
@@ -78,7 +86,7 @@ class Editor(val scene: Scene) {
 
     // Gets the object which is under the cursor
     fun hitTest(p: Vec2): Hit? {
-        // We look for vertex > edge > polygon in that order
+        // We look for vertex > controlPoint > edge > polygon in that order
         val polygons = scene.polygons.asReversed()
 
         // Vertex
@@ -87,10 +95,19 @@ class Editor(val scene: Scene) {
                 ?.let { return Hit.OnVertex(poly, it) }
         }
 
+        // Control point
+        for (poly in polygons) {
+            for (edge in poly.edges) {
+                // controlPoints is empty for a line, [c1, c2] for a Bézier curve
+                edge.controlPoints.firstOrNull { it.pos.distanceTo(p) <= VERTEX_HIT_RADIUS }
+                    ?.let { return Hit.OnControlPoint(poly, edge, it) }
+            }
+        }
+
         // Edge
         for (poly in polygons) {
             poly.edges.firstOrNull {
-                distanceToSegment(p, it.start.pos, it.end.pos) <= EDGE_HIT_TOLERANCE
+                it.polyline.zipWithNext().any { (a, b) -> distanceToSegment(p, a, b) <= EDGE_HIT_TOLERANCE }
             }
                 ?.let { return Hit.OnEdge(poly, it) }
         }
@@ -104,6 +121,7 @@ class Editor(val scene: Scene) {
         is Hit.OnVertex -> Selection.OnVertex(polygon, vertex)
         is Hit.OnEdge -> Selection.OnEdge(polygon, edge)
         is Hit.Inside -> Selection.None
+        is Hit.OnControlPoint -> Selection.OnControlPoint(polygon, edge, point)
         null -> Selection.None
     }
 
@@ -113,7 +131,7 @@ class Editor(val scene: Scene) {
         if (hit !is Hit.OnEdge) return hit.toSelection()
 
         return when (val s = selection) {
-            is Selection.None, is Selection.OnVertex -> hit.toSelection()
+            is Selection.None, is Selection.OnVertex, is Selection.OnControlPoint -> hit.toSelection()
             is Selection.OnEdge -> {
                 if (hit.edge in s) s
                 else Selection.TwoEdges(s.edge, hit.edge)
@@ -144,11 +162,14 @@ class Editor(val scene: Scene) {
 
     // Moves the points by delta and then lets the solver fix the rest of the scene
     // according to constraints, if solver fails, moves the whole polygon
-    private fun moveWithSolver(points: List<Point>, delta: Vec2, polygon: Polygon) {
+    private fun moveWithSolver(
+        points: List<Point>, delta: Vec2, polygon: Polygon,
+        protected: Set<Point> = emptySet()
+    ) {
         val s = scene.snapshot()
 
         points.forEach { it.pos += delta }
-        if (!Solver.solve(scene.constraints, Locks(locked = points.toSet()))) {
+        if (!Solver.solve(scene.constraints, Locks(locked = points.toSet(), protected = protected))) {
             scene.restore(s)
             polygon.translate(delta)
         }
@@ -224,8 +245,10 @@ class Editor(val scene: Scene) {
         val c1 = a + (b - a) / 3.0
         val c2 = a + (b - a) * (2.0 / 3.0)
 
-        scene.changeShape(edge,
-            EdgeShape.Bezier(ControlPoint(c1), ControlPoint(c2)))
+        scene.changeShape(
+            edge,
+            EdgeShape.Bezier(ControlPoint(c1), ControlPoint(c2))
+        )
         changed()
     }
 
@@ -257,6 +280,7 @@ class Editor(val scene: Scene) {
             is Hit.OnVertex -> Drag.MoveVertex(hit.vertex, hit.polygon)
             is Hit.OnEdge -> Drag.MoveEdge(hit.edge, p, hit.polygon)
             is Hit.Inside -> Drag.MovePolygon(hit.polygon, p)
+            is Hit.OnControlPoint -> Drag.MoveControlPoint(hit.point, hit.edge, hit.polygon)
             null -> null
         }
     }
@@ -266,6 +290,12 @@ class Editor(val scene: Scene) {
         when (val d = drag) {
             is Drag.MoveVertex ->
                 moveWithSolver(listOf(d.vertex), p - d.vertex.pos, d.polygon)
+
+            is Drag.MoveControlPoint ->
+                moveWithSolver(
+                    listOf(d.point), p - d.point.pos, d.polygon,
+                    protected = setOf(d.edge.start, d.edge.end)
+                )
 
             is Drag.MoveEdge -> {
                 moveWithSolver(d.edge.points, p - d.last, d.polygon)

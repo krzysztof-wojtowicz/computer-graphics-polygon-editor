@@ -90,7 +90,10 @@ class Polygon(points: List<Vec2>) {
     }
 
     // Checks if point p is inside this polygon
-    operator fun contains(p: Vec2) = containsEvenOdd(vertices.map { it.pos }, p)
+    operator fun contains(p: Vec2) = containsEvenOdd(outline(), p)
+
+    // Returns outline of this polygon
+    fun outline(): List<Vec2> = edges.flatMap { it.polyline.dropLast(1) }
 
     companion object {
         const val MIN_VERTICES = 3

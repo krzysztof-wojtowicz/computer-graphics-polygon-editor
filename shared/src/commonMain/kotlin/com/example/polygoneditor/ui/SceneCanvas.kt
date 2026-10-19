@@ -37,11 +37,8 @@ import com.example.polygoneditor.editor.Editor
 import com.example.polygoneditor.editor.Hit
 import com.example.polygoneditor.editor.LineAlgorithm
 import com.example.polygoneditor.geometry.Vec2
-import com.example.polygoneditor.geometry.bezierPoints
-import com.example.polygoneditor.geometry.bezierSegments
 import com.example.polygoneditor.geometry.midpoint
 import com.example.polygoneditor.geometry.perpendicular
-import com.example.polygoneditor.model.Edge
 import com.example.polygoneditor.model.EdgeShape
 import com.example.polygoneditor.render.BresenhamPainter
 import com.example.polygoneditor.render.LibraryPainter
@@ -141,7 +138,7 @@ fun SceneCanvas(editor: Editor, modifier: Modifier = Modifier) {
         // Draw each polygon
         for (poly in editor.scene.polygons) {
             // Get outline points for fill
-            val outline = poly.edges.flatMap { it.polyline().dropLast(1) }.map { toScreen(it) }
+            val outline = poly.outline().map { toScreen(it) }
 
             // Draw fill of the polygon
             val path = Path().apply {
@@ -166,7 +163,7 @@ fun SceneCanvas(editor: Editor, modifier: Modifier = Modifier) {
                 }
 
                 // we draw each segment of given edge
-                edge.polyline().map { toScreen(it) }.zipWithNext { a, b -> painter.line(a, b, color) }
+                edge.polyline.map { toScreen(it) }.zipWithNext { a, b -> painter.line(a, b, color) }
             }
 
             // Draw control polygon for Bézier curves
@@ -182,10 +179,17 @@ fun SceneCanvas(editor: Editor, modifier: Modifier = Modifier) {
 
                 // Control points as squares centered at their positions
                 for (c in listOf(s.c1, s.c2)) {
+                    val isHovered = hovered is Hit.OnControlPoint && hovered.point === c
+                    val isSelected = c in selection
+                    val h = if (isHovered || isSelected) half * 1.5f else half
                     drawRect(
-                        ControlColor,
-                        topLeft = toScreen(c.pos) - Offset(half, half),
-                        size = Size(2 * half, 2 * half),
+                        color = when {
+                            isSelected -> SelectedColor
+                            isHovered -> HighlightColor
+                            else -> ControlColor
+                        },
+                        topLeft = toScreen(c.pos) - Offset(h, h),
+                        size = Size(2 * h, 2 * h),
                     )
                 }
             }
@@ -240,14 +244,4 @@ private fun DrawScope.drawLabel(textMeasurer: TextMeasurer, text: String, center
         cornerRadius = CornerRadius(2 * pad),
     )
     drawText(layout, topLeft = topLeft)
-}
-
-// Returns list of points representing given edge
-// for bezier it's list of calculated bezier points
-// for line its start & end
-private fun Edge.polyline(): List<Vec2> = when (val s = shape) {
-    is EdgeShape.Bezier -> bezierPoints(start.pos, s.c1.pos, s.c2.pos, end.pos,
-        bezierSegments(start.pos, s.c1.pos, s.c2.pos, end.pos)
-    )
-    EdgeShape.Line, EdgeShape.Arc -> listOf(start.pos, end.pos) // TODO() later for arc
 }

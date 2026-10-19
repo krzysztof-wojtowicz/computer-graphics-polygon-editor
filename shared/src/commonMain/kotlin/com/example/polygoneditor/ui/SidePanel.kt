@@ -47,6 +47,7 @@ fun SidePanel(editor: Editor, modifier: Modifier = Modifier) {
             is Selection.OnVertex -> VertexSection(editor, s)
             is Selection.OnEdge -> EdgeSection(editor, s)
             is Selection.TwoEdges -> TwoEdgesSection(editor, s)
+            is Selection.OnControlPoint -> ControlPointSection(editor, s)
         }
         Spacer(Modifier.weight(1f))
         LineAlgorithmSection(editor)
@@ -79,6 +80,18 @@ private fun VertexSection(editor: Editor, s: Selection.OnVertex) {
     Button(onClick = editor::deleteSelected, modifier = Modifier.fillMaxWidth()) {
         Text("Delete vertex")
     }
+}
+
+@Composable
+private fun ControlPointSection(editor: Editor, s: Selection.OnControlPoint) {
+    editor.version // position changes while dragging – redraw on every model change
+
+    val c = s.point
+    val shape = s.edge.shape as? EdgeShape.Bezier
+    Header("Control point")
+    Text("Edge ${s.polygon.edges.indexOf(s.edge) + 1}, ${if (c === shape?.c1) "near start" else "near end"}")
+    Text("Position: (${c.pos.x.fmt()}, ${c.pos.y.fmt()})")
+    Text("Drag to bend the curve", color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable

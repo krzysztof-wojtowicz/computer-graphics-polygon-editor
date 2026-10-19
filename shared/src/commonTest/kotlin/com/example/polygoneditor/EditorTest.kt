@@ -1,6 +1,7 @@
 package com.example.polygoneditor
 
 import com.example.polygoneditor.editor.Editor
+import com.example.polygoneditor.editor.Hit
 import com.example.polygoneditor.editor.Selection
 import com.example.polygoneditor.geometry.Vec2
 import com.example.polygoneditor.model.ControlPoint
@@ -105,7 +106,7 @@ class EditorTest {
         val c2 = ControlPoint(Vec2(70.0, -20.0))
         e0.shape = EdgeShape.Bezier(c1, c2)
 
-        editor.drag(50, 0, 50, 10)
+        editor.drag(50, -15, 50, -5) // grab the curve itself – its middle (t = 0.5) is (50,-15)
 
         assertEquals(
             listOf(Vec2(0.0, 10.0), Vec2(100.0, 10.0), Vec2(100.0, 100.0), Vec2(0.0, 100.0)),
@@ -670,5 +671,108 @@ class EditorTest {
 
         assertTrue(editor.scene.constraints.isEmpty())
         assertNotNull(editor.message)
+    }
+
+    // ---- curves under the mouse ----
+
+    // Square with e0 bent upwards: c1 (30,-60), c2 (70,-60); the curve's middle (t = 0.5) is (50,-45)
+    private fun editorWithBentSquare(): Editor {
+        val editor = editorWithSquare()
+        val e0 = editor.scene.polygons[0].edges[0]
+        e0.shape = EdgeShape.Bezier(ControlPoint(Vec2(30.0, -60.0)), ControlPoint(Vec2(70.0, -60.0)))
+        return editor
+    }
+
+    private fun Editor.bezierOf(edgeIndex: Int) = scene.polygons[0].edges[edgeIndex].shape as EdgeShape.Bezier
+
+    @Test
+    fun clickOnBentCurveSelectsTheEdge() {
+        val editor = editorWithBentSquare()
+        val poly = editor.scene.polygons[0]
+
+        editor.click(50, -45)
+
+        assertEquals(Selection.OnEdge(poly, poly.edges[0]), editor.selection)
+    }
+
+    @Test
+    fun clickOnTheChordOfABentCurveDoesNotSelectTheEdge() {
+        val editor = editorWithBentSquare()
+
+        editor.click(50, 0) // where the straight edge used to be – now inside the polygon
+
+        assertEquals(Selection.None, editor.selection)
+    }
+
+    @Test
+    fun areaBetweenChordAndCurveIsInsideThePolygon() {
+        val editor = editorWithBentSquare()
+
+        assertTrue(Vec2(50.0, -30.0) in editor.scene.polygons[0])
+    }
+
+    @Test
+    fun clickOnControlPointSelectsIt() {
+        val editor = editorWithBentSquare()
+        val poly = editor.scene.polygons[0]
+
+        editor.click(70, -60)
+
+        assertEquals(Selection.OnControlPoint(poly, poly.edges[0], editor.bezierOf(0).c2), editor.selection)
+    }
+
+    @Test
+    fun hoveringOverControlPointReportsIt() {
+        val editor = editorWithBentSquare()
+
+        editor.onMove(Vec2(31.0, -59.0))
+
+        assertEquals(editor.bezierOf(0).c1, (editor.hovered as Hit.OnControlPoint).point)
+    }
+
+    @Test
+    fun draggedControlPointIsUnderTheCursorAndVerticesStay() {
+        val editor = editorWithBentSquare()
+
+        editor.drag(30, -60, 10, -80)
+
+        assertEquals(Vec2(10.0, -80.0), editor.bezierOf(0).c1.pos)
+        assertEquals(Vec2(70.0, -60.0), editor.bezierOf(0).c2.pos)
+        assertEquals(squarePositions, editor.vertexPositions())
+    }
+
+    @Test
+    fun vertexWinsOverControlPointLyingOnIt() {
+        val editor = editorWithBentSquare()
+        val poly = editor.scene.polygons[0]
+        editor.bezierOf(0).c1.pos = Vec2(2.0, 0.0)
+
+        editor.click(1, 0)
+
+        assertEquals(Selection.OnVertex(poly, poly.vertices[0]), editor.selection)
+    }
+
+    @Test
+    fun doubleClickOnControlPointInsertsNothing() {
+        val editor = editorWithBentSquare()
+
+        editor.onPrimaryPress(Vec2(30.0, -60.0))
+        editor.onRelease()
+        editor.onPrimaryPress(Vec2(30.0, -60.0))
+        editor.onDoubleClick(Vec2(30.0, -60.0))
+        editor.onRelease()
+
+        assertEquals(4, editor.scene.polygons[0].edgeCount)
+    }
+
+    @Test
+    fun shiftClickOnEdgeAfterControlPointSelectsJustThatEdge() {
+        val editor = editorWithBentSquare()
+        val poly = editor.scene.polygons[0]
+        editor.click(30, -60)
+
+        editor.click(100, 50, shift = true)
+
+        assertEquals(Selection.OnEdge(poly, poly.edges[1]), editor.selection)
     }
 }
