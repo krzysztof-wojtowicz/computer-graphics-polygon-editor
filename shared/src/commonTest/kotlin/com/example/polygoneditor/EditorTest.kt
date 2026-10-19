@@ -775,4 +775,79 @@ class EditorTest {
 
         assertEquals(Selection.OnEdge(poly, poly.edges[1]), editor.selection)
     }
+
+    // ---- control points follow their vertex ----
+
+    // Square with two curves: e0 (v0→v1) and e1 (v1→v2); e2 and e3 stay lines
+    private fun editorWithTwoCurves(): Editor {
+        val editor = editorWithSquare()
+        val (e0, e1) = editor.scene.polygons[0].edges
+        e0.shape = EdgeShape.Bezier(ControlPoint(Vec2(30.0, -30.0)), ControlPoint(Vec2(70.0, -30.0)))
+        e1.shape = EdgeShape.Bezier(ControlPoint(Vec2(130.0, 30.0)), ControlPoint(Vec2(130.0, 70.0)))
+        return editor
+    }
+
+    @Test
+    fun controlPointsAtVertexBetweenTwoCurves() {
+        val editor = editorWithTwoCurves()
+        val poly = editor.scene.polygons[0]
+
+        // v1 is the end of e0 (-> its c2) and the start of e1 (-> its c1)
+        assertEquals(listOf(editor.bezierOf(0).c2, editor.bezierOf(1).c1), poly.controlPointsAt(poly.vertices[1]))
+    }
+
+    @Test
+    fun controlPointsAtVertexBetweenCurveAndLine() {
+        val editor = editorWithTwoCurves()
+        val poly = editor.scene.polygons[0]
+
+        assertEquals(listOf(editor.bezierOf(0).c1), poly.controlPointsAt(poly.vertices[0])) // e3 line -> e0 curve
+        assertEquals(listOf(editor.bezierOf(1).c2), poly.controlPointsAt(poly.vertices[2])) // e1 curve -> e2 line
+    }
+
+    @Test
+    fun controlPointsAtVertexBetweenTwoLinesIsEmpty() {
+        val editor = editorWithTwoCurves()
+        val poly = editor.scene.polygons[0]
+
+        assertTrue(poly.controlPointsAt(poly.vertices[3]).isEmpty())
+    }
+
+    @Test
+    fun draggingVertexCarriesItsNeighbouringControlPoints() {
+        val editor = editorWithTwoCurves()
+
+        editor.drag(100, 0, 110, -20) // v1 by (10,-20)
+
+        assertEquals(Vec2(80.0, -50.0), editor.bezierOf(0).c2.pos)  // next to v1 – moved
+        assertEquals(Vec2(140.0, 10.0), editor.bezierOf(1).c1.pos)  // next to v1 – moved
+        assertEquals(Vec2(30.0, -30.0), editor.bezierOf(0).c1.pos)  // next to v0 – stays
+        assertEquals(Vec2(130.0, 70.0), editor.bezierOf(1).c2.pos)  // next to v2 – stays
+    }
+
+    @Test
+    fun draggingVertexBetweenLinesMovesOnlyThatVertex() {
+        val editor = editorWithTwoCurves()
+        val controlsBefore = editor.scene.polygons[0].edges.flatMap { it.controlPoints }.map { it.pos }
+
+        editor.drag(0, 100, -10, 110) // v3
+
+        assertEquals(Vec2(-10.0, 110.0), editor.vertexPositions()[3])
+        assertEquals(controlsBefore, editor.scene.polygons[0].edges.flatMap { it.controlPoints }.map { it.pos })
+    }
+
+    @Test
+    fun draggingEdgeMovesEveryAttachedControlPointExactlyOnce() {
+        val editor = editorWithTwoCurves()
+
+        editor.drag(122.5, 50, 132.5, 50) // middle of the e1 curve (t = 0.5), by (10,0); e1 is v1→v2
+
+        // e1's own control points – moved once, not twice
+        assertEquals(Vec2(140.0, 30.0), editor.bezierOf(1).c1.pos)
+        assertEquals(Vec2(140.0, 70.0), editor.bezierOf(1).c2.pos)
+        // e0's control point next to v1 – carried along
+        assertEquals(Vec2(80.0, -30.0), editor.bezierOf(0).c2.pos)
+        // e0's control point next to v0 – stays
+        assertEquals(Vec2(30.0, -30.0), editor.bezierOf(0).c1.pos)
+    }
 }

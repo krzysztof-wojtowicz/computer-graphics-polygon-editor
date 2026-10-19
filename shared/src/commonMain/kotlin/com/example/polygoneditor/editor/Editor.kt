@@ -164,12 +164,14 @@ class Editor(val scene: Scene) {
     // according to constraints, if solver fails, moves the whole polygon
     private fun moveWithSolver(
         points: List<Point>, delta: Vec2, polygon: Polygon,
-        protected: Set<Point> = emptySet()
+        protected: Set<Point> = emptySet(),
+        carried: List<Point> = emptyList()
     ) {
         val s = scene.snapshot()
 
         points.forEach { it.pos += delta }
-        if (!Solver.solve(scene.constraints, Locks(locked = points.toSet(), protected = protected))) {
+        carried.forEach { it.pos += delta }
+        if (!Solver.solve(scene.constraints, Locks(locked = points.toSet(), protected = protected + carried))) {
             scene.restore(s)
             polygon.translate(delta)
         }
@@ -288,8 +290,11 @@ class Editor(val scene: Scene) {
     // On mouse move
     fun onMove(p: Vec2) {
         when (val d = drag) {
-            is Drag.MoveVertex ->
-                moveWithSolver(listOf(d.vertex), p - d.vertex.pos, d.polygon)
+            is Drag.MoveVertex -> {
+                val delta = p - d.vertex.pos
+                val carried = d.polygon.controlPointsAt(d.vertex)
+                moveWithSolver(listOf(d.vertex), delta, d.polygon, carried = carried)
+            }
 
             is Drag.MoveControlPoint ->
                 moveWithSolver(
@@ -298,7 +303,12 @@ class Editor(val scene: Scene) {
                 )
 
             is Drag.MoveEdge -> {
-                moveWithSolver(d.edge.points, p - d.last, d.polygon)
+                val points = d.edge.points
+                // The edge's own c1/c2 are on these lists too – they're already in points, don't move them twice
+                val carried =
+                    (d.polygon.controlPointsAt(d.edge.start) + d.polygon.controlPointsAt(d.edge.end))
+                        .filter { it !in points }
+                moveWithSolver(points, p - d.last, d.polygon, carried = carried)
                 d.last = p
             }
 

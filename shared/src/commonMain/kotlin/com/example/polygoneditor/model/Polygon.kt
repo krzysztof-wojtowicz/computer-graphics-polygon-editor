@@ -95,6 +95,16 @@ class Polygon(points: List<Vec2>) {
     // Returns outline of this polygon
     fun outline(): List<Vec2> = edges.flatMap { it.polyline.dropLast(1) }
 
+    // Returns list of control points next to v
+    fun controlPointsAt(v: Vertex): List<ControlPoint> {
+        val (incoming, outgoing) = edgesAt(v)
+
+        val a = (incoming.shape as? EdgeShape.Bezier)?.c2
+        val b = (outgoing.shape as? EdgeShape.Bezier)?.c1
+
+        return listOfNotNull(a, b)
+    }
+
     companion object {
         const val MIN_VERTICES = 3
     }
