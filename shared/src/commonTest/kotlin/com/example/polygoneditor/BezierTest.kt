@@ -2,6 +2,7 @@ package com.example.polygoneditor
 
 import com.example.polygoneditor.geometry.Vec2
 import com.example.polygoneditor.geometry.bezierPoints
+import com.example.polygoneditor.geometry.bezierSegments
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -68,5 +69,16 @@ class BezierTest {
     @Test
     fun zeroSegmentsIsRejected() {
         assertFailsWith<IllegalArgumentException> { bezierPoints(v0, v1, v2, v3, 0) }
+    }
+
+    @Test
+    fun segmentCountGrowsWithTheControlPolygonAndStaysInRange() {
+        val p = Vec2(10.0, 10.0)
+        assertEquals(1, bezierSegments(p, p, p, p)) // zero length – still one segment
+
+        // Control polygon of length 3 * 40 = 120 -> one segment per 4 units
+        assertEquals(30, bezierSegments(Vec2(0.0, 0.0), Vec2(40.0, 0.0), Vec2(80.0, 0.0), Vec2(120.0, 0.0)))
+
+        assertEquals(200, bezierSegments(Vec2(0.0, 0.0), Vec2(1e4, 0.0), Vec2(-1e4, 0.0), Vec2(1e4, 0.0)))
     }
 }

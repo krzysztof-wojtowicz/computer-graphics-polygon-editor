@@ -34,3 +34,9 @@ fun bezierPoints(v0: Vec2, v1: Vec2, v2: Vec2, v3: Vec2, n: Int): List<Vec2> {
         }
     }
 }
+
+// Calculate how many segments based on control polygon
+// one per 4 units of control polygon's length
+fun bezierSegments(v0: Vec2, v1: Vec2, v2: Vec2, v3: Vec2): Int {
+    return (((v1 - v0).length + (v2 - v1).length + (v3 - v2).length) / 4).coerceIn(1.0, 200.0).toInt()
+}

@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.example.polygoneditor.geometry.Vec2
 import com.example.polygoneditor.geometry.distanceToSegment
+import com.example.polygoneditor.model.ControlPoint
 import com.example.polygoneditor.model.Edge
 import com.example.polygoneditor.model.EdgeShape
 import com.example.polygoneditor.model.Point
@@ -210,6 +211,31 @@ class Editor(val scene: Scene) {
         }
 
         addWithSolver(Perpendicular(e1, e2))
+    }
+
+    // Handles edge shape change to bezier
+    fun toBezier(edge: Edge) {
+        message = null
+        if (edge.shape is EdgeShape.Bezier) return
+
+        // Adds two control points, one at 1/3 of ab, second at 2/3 of ab
+        val a = edge.start.pos
+        val b = edge.end.pos
+        val c1 = a + (b - a) / 3.0
+        val c2 = a + (b - a) * (2.0 / 3.0)
+
+        scene.changeShape(edge,
+            EdgeShape.Bezier(ControlPoint(c1), ControlPoint(c2)))
+        changed()
+    }
+
+    // Handles edge shape change to line
+    fun toLine(edge: Edge) {
+        message = null
+        if (edge.shape is EdgeShape.Line) return
+
+        scene.changeShape(edge, EdgeShape.Line)
+        changed()
     }
 
     // Removes constraint

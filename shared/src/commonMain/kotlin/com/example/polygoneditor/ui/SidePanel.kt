@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -97,14 +98,17 @@ private fun EdgeSection(editor: Editor, s: Selection.OnEdge) {
     ConstraintList(editor, constraints)
 
     Gap()
-    Button(onClick = { showLengthDialog = true }, modifier = Modifier.fillMaxWidth()) {
+    Button(
+        onClick = { showLengthDialog = true },
+        enabled = edge.shape is EdgeShape.Line, // constraints apply only to lines
+        modifier = Modifier.fillMaxWidth(),
+    ) {
         Text("Set length…")
     }
-    // Future actions – enabled together with curves
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        PlaceholderButton("Line", Modifier.weight(1f))
-        PlaceholderButton("Bézier", Modifier.weight(1f))
-        PlaceholderButton("Arc", Modifier.weight(1f))
+        ShapeButton("Line", edge.shape is EdgeShape.Line, { editor.toLine(edge) }, Modifier.weight(1f))
+        ShapeButton("Bézier", edge.shape is EdgeShape.Bezier, { editor.toBezier(edge) }, Modifier.weight(1f))
+        PlaceholderButton("Arc", Modifier.weight(1f)) // enabled together with arcs
     }
 
     // No show()/hide() in Compose: the dialog exists only while the condition holds
@@ -190,10 +194,23 @@ private fun Gap() {
     Spacer(Modifier.height(6.dp))
 }
 
+// Three buttons in a row are narrow – the default 24 dp side padding would wrap "Bézier"
+private val NarrowPadding = PaddingValues(horizontal = 4.dp)
+
+// The current shape is a filled button, the others outlined
+@Composable
+private fun ShapeButton(text: String, current: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    if (current) {
+        Button(onClick = onClick, modifier = modifier, contentPadding = NarrowPadding) { Text(text) }
+    } else {
+        OutlinedButton(onClick = onClick, modifier = modifier, contentPadding = NarrowPadding) { Text(text) }
+    }
+}
+
 // A disabled button marking where an action will be added later
 @Composable
 private fun PlaceholderButton(text: String, modifier: Modifier = Modifier.fillMaxWidth()) {
-    OutlinedButton(onClick = {}, enabled = false, modifier = modifier) {
+    OutlinedButton(onClick = {}, enabled = false, modifier = modifier, contentPadding = NarrowPadding) {
         Text(text)
     }
 }

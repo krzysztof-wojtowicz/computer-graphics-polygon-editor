@@ -589,4 +589,86 @@ class EditorTest {
         assertTrue(editor.scene.constraints.isEmpty())
         assertEquals(positionsBefore, editor.allPositions())
     }
+
+    // ---- edge shape ----
+
+    @Test
+    fun toBezierPutsControlPointsAtThirdsOfTheEdge() {
+        val editor = editorWithSquare()
+        val e0 = editor.scene.polygons[0].edges[0]
+
+        editor.toBezier(e0)
+
+        val shape = e0.shape as EdgeShape.Bezier
+        assertClose(Vec2(100.0 / 3, 0.0), shape.c1.pos)
+        assertClose(Vec2(200.0 / 3, 0.0), shape.c2.pos)
+        assertEquals(squarePositions, editor.vertexPositions()) // vertices don't move
+    }
+
+    @Test
+    fun toBezierRemovesOnlyTheConstraintsOfThatEdge() {
+        val editor = editorWithSquare()
+        val (e0, e1, e2) = editor.scene.polygons[0].edges
+        editor.setLength(e0, 100.0)
+        editor.makePerpendicular(e0, e1)
+        editor.setLength(e2, 100.0)
+        val e2Length = editor.scene.constraintsOf(e2).single()
+
+        editor.toBezier(e0)
+
+        assertEquals(listOf(e2Length), editor.scene.constraints) // e0's length and the e0–e1 pair are gone
+    }
+
+    @Test
+    fun toBezierOnACurveDoesNotResetIt() {
+        val editor = editorWithSquare()
+        val e0 = editor.scene.polygons[0].edges[0]
+        editor.toBezier(e0)
+        val shape = e0.shape as EdgeShape.Bezier
+        shape.c1.pos = Vec2(30.0, -40.0) // bent by the user
+
+        editor.toBezier(e0)
+
+        assertTrue(e0.shape === shape)
+        assertEquals(Vec2(30.0, -40.0), shape.c1.pos)
+    }
+
+    @Test
+    fun toLineRemovesControlPointsAndKeepsSelection() {
+        val editor = editorWithSquare()
+        val e0 = editor.scene.polygons[0].edges[0]
+        editor.click(50, 0)
+        editor.toBezier(e0)
+
+        editor.toLine(e0)
+
+        assertEquals(EdgeShape.Line, e0.shape)
+        assertEquals(4, editor.scene.allPoints().size) // only the vertices are left
+        assertTrue(e0 in editor.selection)
+    }
+
+    @Test
+    fun shapeChangeBumpsVersionOnlyWhenSomethingChanges() {
+        val editor = editorWithSquare()
+        val e0 = editor.scene.polygons[0].edges[0]
+        val before = editor.version
+
+        editor.toLine(e0) // already a line
+        assertEquals(before, editor.version)
+
+        editor.toBezier(e0)
+        assertTrue(editor.version > before)
+    }
+
+    @Test
+    fun setLengthOnACurveIsRejected() {
+        val editor = editorWithSquare()
+        val e0 = editor.scene.polygons[0].edges[0]
+        editor.toBezier(e0)
+
+        editor.setLength(e0, 50.0)
+
+        assertTrue(editor.scene.constraints.isEmpty())
+        assertNotNull(editor.message)
+    }
 }
