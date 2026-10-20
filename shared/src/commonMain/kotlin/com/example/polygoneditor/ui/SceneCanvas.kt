@@ -14,6 +14,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.key.Key
@@ -38,6 +39,7 @@ import com.example.polygoneditor.editor.LineAlgorithm
 import com.example.polygoneditor.geometry.Vec2
 import com.example.polygoneditor.geometry.midpoint
 import com.example.polygoneditor.geometry.perpendicular
+import com.example.polygoneditor.model.EdgeShape
 import com.example.polygoneditor.render.BresenhamPainter
 import com.example.polygoneditor.render.LibraryPainter
 import com.example.polygoneditor.render.Painter
@@ -47,6 +49,7 @@ private val EdgeColor = Color(0xFF1F2937)
 private val VertexColor = Color(0xFFDC2626)
 private val HighlightColor = Color(0xFFF59E0B)
 private val SelectedColor = Color(0xFF2563EB)
+private val ControlColor = Color(0xFF6B7280)
 private val LabelBackground = Color.White.copy(alpha = 0.85f)
 private val LabelStyle = TextStyle(fontSize = 11.sp, color = Color(0xFF7C3AED))
 
@@ -134,13 +137,14 @@ fun SceneCanvas(editor: Editor, modifier: Modifier = Modifier) {
 
         // Draw each polygon
         for (poly in editor.scene.polygons) {
-            val pts = poly.vertices.map { toScreen(it.pos) }
+            // Get outline points for fill
+            val outline = poly.outline().map { toScreen(it) }
 
             // Draw fill of the polygon
             val path = Path().apply {
                 fillType = PathFillType.EvenOdd
-                moveTo(pts[0].x, pts[0].y)
-                pts.drop(1).forEach { lineTo(it.x, it.y) }
+                moveTo(outline[0].x, outline[0].y)
+                outline.drop(1).forEach { lineTo(it.x, it.y) }
                 close()
             }
             drawPath(
@@ -152,15 +156,42 @@ fun SceneCanvas(editor: Editor, modifier: Modifier = Modifier) {
             for (edge in poly.edges) {
                 val isHovered = hovered is Hit.OnEdge && hovered.polygon === poly && hovered.edge == edge
                 val isSelected = edge in selection
-                painter.line(
-                    toScreen(edge.start.pos),
-                    toScreen(edge.end.pos),
-                    color = when {
-                        isSelected -> SelectedColor
-                        isHovered -> HighlightColor
-                        else -> EdgeColor
-                    }
-                )
+                val color = when {
+                    isSelected -> SelectedColor
+                    isHovered -> HighlightColor
+                    else -> EdgeColor
+                }
+
+                // we draw each segment of given edge
+                edge.polyline.map { toScreen(it) }.zipWithNext { a, b -> painter.line(a, b, color) }
+            }
+
+            // Draw control polygon for Bézier curves
+            val dash = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx()))
+            val half = 4.dp.toPx() // half of the size of control point
+            for (edge in poly.edges) {
+                val s = edge.shape as? EdgeShape.Bezier ?: continue
+
+                // start – c1 – c2 – end, dashed
+                listOf(edge.start.pos, s.c1.pos, s.c2.pos, edge.end.pos)
+                    .map { toScreen(it) }
+                    .zipWithNext { a, b -> drawLine(ControlColor, a, b, stroke, pathEffect = dash) }
+
+                // Control points as squares centered at their positions
+                for (c in listOf(s.c1, s.c2)) {
+                    val isHovered = hovered is Hit.OnControlPoint && hovered.point === c
+                    val isSelected = c in selection
+                    val h = if (isHovered || isSelected) half * 1.5f else half
+                    drawRect(
+                        color = when {
+                            isSelected -> SelectedColor
+                            isHovered -> HighlightColor
+                            else -> ControlColor
+                        },
+                        topLeft = toScreen(c.pos) - Offset(h, h),
+                        size = Size(2 * h, 2 * h),
+                    )
+                }
             }
 
             // Draw vertices of the polygon

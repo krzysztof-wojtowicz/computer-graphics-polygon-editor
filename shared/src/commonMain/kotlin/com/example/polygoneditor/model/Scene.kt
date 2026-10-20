@@ -63,4 +63,10 @@ class Scene {
         dropConstraintsOf(listOf(incoming, outgoing))
         return true
     }
+
+    // Changes edge shape and removes all current constraints if new shape is a curve or arc
+    fun changeShape(edge: Edge, shape: EdgeShape) {
+        edge.shape = shape
+        if (shape !is EdgeShape.Line) dropConstraintsOf(listOf(edge))
+    }
 }

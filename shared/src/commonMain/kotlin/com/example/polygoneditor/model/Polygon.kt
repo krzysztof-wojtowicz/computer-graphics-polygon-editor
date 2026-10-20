@@ -90,7 +90,20 @@ class Polygon(points: List<Vec2>) {
     }
 
     // Checks if point p is inside this polygon
-    operator fun contains(p: Vec2) = containsEvenOdd(vertices.map { it.pos }, p)
+    operator fun contains(p: Vec2) = containsEvenOdd(outline(), p)
+
+    // Returns outline of this polygon
+    fun outline(): List<Vec2> = edges.flatMap { it.polyline.dropLast(1) }
+
+    // Returns list of control points next to v
+    fun controlPointsAt(v: Vertex): List<ControlPoint> {
+        val (incoming, outgoing) = edgesAt(v)
+
+        val a = (incoming.shape as? EdgeShape.Bezier)?.c2
+        val b = (outgoing.shape as? EdgeShape.Bezier)?.c1
+
+        return listOfNotNull(a, b)
+    }
 
     companion object {
         const val MIN_VERTICES = 3
