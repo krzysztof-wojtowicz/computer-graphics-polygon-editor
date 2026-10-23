@@ -298,8 +298,14 @@ class Editor(val scene: Scene) {
             return
         }
 
-        v.continuityExplicit = true // chosen by the user, not a default
-        if (v.continuity == c) return
+        if (v.continuity == c) {
+            // Same class, but now the user's choice – the "(default)" label has to go
+            if (!v.continuityExplicit) {
+                v.continuityExplicit = true
+                changed()
+            }
+            return
+        }
 
         // Transaction: positions + the classes (the one-end rule may switch another vertex too)
         val s = scene.snapshot()
@@ -325,6 +331,7 @@ class Editor(val scene: Scene) {
             return
         }
 
+        v.continuityExplicit = true // chosen by the user, not a default – only once the change went through
         changed()
     }
 

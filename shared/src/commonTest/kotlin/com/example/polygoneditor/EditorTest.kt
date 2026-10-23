@@ -1230,4 +1230,16 @@ class EditorTest {
 
         assertEquals(c1, editor.bezierOf(0).c1.pos)
     }
+
+    @Test
+    fun choosingTheDefaultClassMakesItExplicitAndRedraws() {
+        val editor = editorWithSquare()
+        editor.toBezier(editor.scene.polygons[0].edges[0]) // v0: C1 by default
+        val before = editor.version
+
+        editor.setContinuity(0, Continuity.C1)
+
+        assertTrue(editor.vertex(0).continuityExplicit)
+        assertTrue(editor.version > before, "the panel drops the (default) label")
+    }
 }
