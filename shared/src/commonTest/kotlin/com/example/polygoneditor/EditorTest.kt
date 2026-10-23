@@ -600,6 +600,9 @@ class EditorTest {
     fun toBezierPutsControlPointsAtThirdsOfTheEdge() {
         val editor = editorWithSquare()
         val e0 = editor.scene.polygons[0].edges[0]
+        // Explicit G0 at both ends – no default C1, nothing bends the new curve
+        editor.setContinuity(editor.scene.polygons[0], editor.scene.polygons[0].vertices[0], Continuity.G0)
+        editor.setContinuity(editor.scene.polygons[0], editor.scene.polygons[0].vertices[1], Continuity.G0)
 
         editor.toBezier(e0)
 
@@ -1128,5 +1131,103 @@ class EditorTest {
         assertTrue(editor.vertex(0).pos.distanceTo(Vec2(0.0, -20.0)) < 1e-9, "v0 at ${editor.vertex(0).pos}")
         assertTrue(abs(poly.edges[3].length - 100.0) < Solver.EPS)
         assertTrue(editor.continuityError() < Solver.EPS)
+    }
+
+    // ---- default C1 ----
+
+    private fun assertNear(expected: Vec2, actual: Vec2) =
+        assertTrue(actual.distanceTo(expected) < Solver.EPS, "expected $expected, got $actual")
+
+    @Test
+    fun toBezierDefaultsToC1AndContinuesTheNeighbouringLines() {
+        val editor = editorWithSquare()
+
+        editor.toBezier(editor.scene.polygons[0].edges[0])
+
+        for (i in 0..1) {
+            assertEquals(Continuity.C1, editor.vertex(i).continuity)
+            assertFalse(editor.vertex(i).continuityExplicit, "a default, not the user's choice")
+        }
+        assertNear(Vec2(0.0, -100 / 3.0), editor.bezierOf(0).c1.pos)   // V + (V − P) / 3, P = (0, 100)
+        assertNear(Vec2(100.0, -100 / 3.0), editor.bezierOf(0).c2.pos) // the same at the other end
+        assertEquals(squarePositions, editor.vertexPositions())
+        assertTrue(editor.continuityError() < Solver.EPS)
+        assertNull(editor.message)
+    }
+
+    @Test
+    fun toBezierNextToACurveMovesOnlyTheNewCurve() {
+        val editor = editorWithSquare()
+        val (e0, e1) = editor.scene.polygons[0].edges
+        editor.toBezier(e0)
+        val before = editor.bezierOf(0).let { it.c1.pos to it.c2.pos }
+
+        editor.toBezier(e1)
+
+        assertEquals(before, editor.bezierOf(0).let { it.c1.pos to it.c2.pos }) // the neighbour keeps its shape
+        assertNear(Vec2(100.0, 100 / 3.0), editor.bezierOf(1).c1.pos)          // mirror of e0's c2
+        assertNear(Vec2(100 + 100 / 3.0, 100.0), editor.bezierOf(1).c2.pos)    // continues e2
+        assertTrue(editor.continuityError() < Solver.EPS)
+    }
+
+    @Test
+    fun toBezierNextToAnArcLeavesThatEndWithoutC1() {
+        val editor = editorWithSquare()
+        val edges = editor.scene.polygons[0].edges
+        editor.toArc(edges[3])
+
+        editor.toBezier(edges[0])
+
+        assertEquals(Continuity.G0, editor.vertex(0).continuity) // arc + Bézier: C1 not available
+        assertEquals(Continuity.C1, editor.vertex(1).continuity)
+    }
+
+    @Test
+    fun defaultC1ComesBackAfterLineAndBezierAgain() {
+        val editor = editorWithSquare()
+        val e0 = editor.scene.polygons[0].edges[0]
+
+        editor.toBezier(e0)
+        editor.toLine(e0)
+        assertEquals(Continuity.G0, editor.vertex(0).continuity) // two lines
+
+        editor.toBezier(e0)
+        assertEquals(Continuity.C1, editor.vertex(0).continuity) // still not explicit – default again
+    }
+
+    // ---- setContinuity straightens at once ----
+
+    @Test
+    fun setC1MovesTheControlPointRightAway() {
+        val editor = editorWithBentSquare() // c1 (30, -60), e3 arrives at v0 from (0, 100)
+        val before = editor.version
+
+        editor.setContinuity(0, Continuity.C1)
+
+        assertNear(Vec2(0.0, -100 / 3.0), editor.bezierOf(0).c1.pos)
+        assertEquals(squarePositions, editor.vertexPositions())
+        assertTrue(editor.version > before)
+    }
+
+    @Test
+    fun setG1TurnsTheControlPointKeepingItsDistance() {
+        val editor = editorWithBentSquare()
+        val arm = Vec2(30.0, -60.0).length
+
+        editor.setContinuity(0, Continuity.G1)
+
+        assertNear(Vec2(0.0, -arm), editor.bezierOf(0).c1.pos) // along e3, as far from v0 as before
+    }
+
+    @Test
+    fun setG0LeavesTheCurveAsItIs() {
+        val editor = editorWithBentSquare()
+        editor.setContinuity(0, Continuity.C1)
+        val c1 = editor.bezierOf(0).c1.pos
+
+        editor.setContinuity(0, Continuity.G0)
+        editor.drag(0, 100, -50, 100) // the neighbouring line moves, the handle no longer follows it
+
+        assertEquals(c1, editor.bezierOf(0).c1.pos)
     }
 }

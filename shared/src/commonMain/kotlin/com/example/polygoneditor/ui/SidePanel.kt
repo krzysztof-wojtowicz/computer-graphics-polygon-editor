@@ -185,7 +185,10 @@ private fun ContinuitySection(editor: Editor, s: Selection.OnVertex) {
 
     Text("Continuity", style = MaterialTheme.typography.titleSmall)
     for (c in Continuity.entries) {
-        RadioRow(c.name, v.continuity == c, c in allowed, { editor.setContinuity(s.polygon, v, c) })
+        val selected = v.continuity == c
+        // A class the editor set by itself (C1 after turning an edge into a curve) – not chosen by the user
+        val text = if (selected && c != Continuity.G0 && !v.continuityExplicit) "${c.name} (default)" else c.name
+        RadioRow(text, selected, c in allowed, { editor.setContinuity(s.polygon, v, c) })
     }
 
     // Why some options are disabled

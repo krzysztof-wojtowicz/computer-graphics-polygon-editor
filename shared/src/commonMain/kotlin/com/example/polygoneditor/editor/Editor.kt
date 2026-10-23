@@ -238,22 +238,38 @@ class Editor(val scene: Scene) {
     }
 
     // Handles edge shape change to bezier
+    // Both ends get the default C1 (unless the user chose their class) and the new control points follow it
     fun toBezier(edge: Edge) {
         message = null
         if (edge.shape is EdgeShape.Bezier) return
+        val polygon = polygonOf(edge)
 
         // Adds two control points, one at 1/3 of ab, second at 2/3 of ab
         val a = edge.start.pos
         val b = edge.end.pos
-        val c1 = a + (b - a) / 3.0
-        val c2 = a + (b - a) * (2.0 / 3.0)
+        val c1 = ControlPoint(a + (b - a) / 3.0)
+        val c2 = ControlPoint(a + (b - a) * (2.0 / 3.0))
 
-        scene.changeShape(
-            edge,
-            EdgeShape.Bezier(ControlPoint(c1), ControlPoint(c2))
-        )
+        scene.changeShape(edge, EdgeShape.Bezier(c1, c2))
+
+        // Default C1 only where C1 makes sense (not next to an arc)
+        val ends = listOf(edge.start, edge.end)
+        ends.filter { !it.continuityExplicit && Continuity.C1 in polygon.allowedContinuities(it) }
+            .forEach { it.continuity = Continuity.C1 }
+
+        // Vertices stay, the neighbours' control points move only if they have to – the new curve adapts
+        val s = scene.snapshot()
+        val locks = Locks(locked = polygon.vertices.toSet(), protected = (polygon.points - setOf(c1, c2)).toSet())
+        if (!Solver.solve(scene.allConstraints(), locks)) {
+            // G0 adds no constraint, so the restored positions satisfy everything again
+            scene.restore(s)
+            ends.forEach { it.continuity = Continuity.G0 }
+            message = "C1 couldn't be applied – the ends of the curve were set to G0."
+        }
         changed()
     }
+
+    private fun polygonOf(edge: Edge) = scene.polygons.first { edge in it.edges }
 
     // Handles edge shape change to line
     fun toLine(edge: Edge) {
@@ -284,6 +300,10 @@ class Editor(val scene: Scene) {
 
         v.continuityExplicit = true // chosen by the user, not a default
         if (v.continuity == c) return
+
+        // Transaction: positions + the classes (the one-end rule may switch another vertex too)
+        val s = scene.snapshot()
+        val classes = polygon.vertices.associateWith { it.continuity }
         v.continuity = c
 
         if (c == Continuity.G1) {
@@ -294,6 +314,15 @@ class Editor(val scene: Scene) {
                     message = "Only one end of an arc can be G1 – the other end was set to G0."
                 }
             }
+        }
+
+        // The curve straightens at once – control points move, the vertex stays
+        val locks = Locks(locked = setOf(v), protected = (polygon.vertices - v).toSet())
+        if (!Solver.solve(scene.allConstraints(), locks)) {
+            scene.restore(s)
+            classes.forEach { (vertex, old) -> vertex.continuity = old }
+            message = "${c.name} conflicts with the constraints of the neighbouring edges."
+            return
         }
 
         changed()
