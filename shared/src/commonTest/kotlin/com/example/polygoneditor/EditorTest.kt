@@ -15,6 +15,7 @@ import com.example.polygoneditor.solver.Solver
 import com.example.polygoneditor.solver.error
 import kotlin.test.Test
 import kotlin.math.abs
+import kotlin.math.sqrt
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
@@ -1054,5 +1055,78 @@ class EditorTest {
         editor.scene.removeVertex(poly, editor.vertex(0)) // e3 + arc become one line into v1
 
         assertEquals(Continuity.G0, v1.continuity)
+    }
+
+    // ---- dragging with G1 / C1 ----
+
+    private fun Editor.continuityError() = scene.allConstraints().maxOfOrNull { it.error() } ?: 0.0
+
+    @Test
+    fun draggingAControlPointTurnsTheOneAcrossAC1Vertex() {
+        val editor = editorWithTwoCurves() // already C1 at v1: c2 (70,-30), V (100,0), c1 (130,30)
+        editor.setContinuity(1, Continuity.C1)
+
+        editor.drag(70, -30, 70, -10)
+
+        assertEquals(Vec2(130.0, 10.0), editor.bezierOf(1).c1.pos) // C = 2V − P
+        assertEquals(Vec2(100.0, 0.0), editor.vertex(1).pos)      // the vertex stays
+    }
+
+    @Test
+    fun draggingAVertexNextToALineTurnsTheHandleNotTheLine() {
+        val editor = editorWithBentSquare() // e3 line (0,100) → v0, e0 Bézier with c1 (30,-60)
+        editor.setContinuity(0, Continuity.C1)
+
+        editor.drag(0, 0, 10, 0)
+
+        assertEquals(Vec2(0.0, 100.0), editor.vertex(3).pos) // the line's far end stays
+        assertEquals(Vec2(10.0, 0.0), editor.vertex(0).pos)
+        assertTrue(editor.continuityError() < Solver.EPS)
+    }
+
+    @Test
+    fun draggingTheFarEndOfALineTurnsTheHandle() {
+        val editor = editorWithBentSquare()
+        editor.setContinuity(0, Continuity.C1)
+
+        editor.drag(0, 100, -50, 100)
+
+        // C = V + (V − P) / 3 with P = (-50, 100)
+        val c1 = editor.bezierOf(0).c1.pos
+        assertTrue(c1.distanceTo(Vec2(50 / 3.0, -100 / 3.0)) < Solver.EPS, "c1 at $c1")
+        assertEquals(Vec2(0.0, 0.0), editor.vertex(0).pos)
+    }
+
+    @Test
+    fun draggingAControlPointKeepsLengthAndC1OfTheNeighbouringLine() {
+        val editor = editorWithBentSquare()
+        val poly = editor.scene.polygons[0]
+        editor.setLength(poly.edges[3], 100.0)
+        editor.setContinuity(0, Continuity.C1)
+        editor.drag(0, 100, 0, 100) // a no-move drag, so the solver brings c1 to (0, -100/3)
+        val r = 100 / 3.0
+
+        editor.drag(0, -r, r / sqrt(2.0), -r / sqrt(2.0)) // same arm length, turned by 45°
+
+        assertTrue(abs(poly.edges[3].length - 100.0) < Solver.EPS)
+        assertTrue(editor.continuityError() < Solver.EPS)
+        assertEquals(Vec2(0.0, 0.0), editor.vertex(0).pos) // the vertex of the dragged control point's segment stays
+    }
+
+    @Test
+    fun conflictingLengthAndC1MoveTheWholePolygon() {
+        val editor = editorWithBentSquare()
+        val poly = editor.scene.polygons[0]
+        editor.setLength(poly.edges[3], 100.0)
+        editor.setContinuity(0, Continuity.C1)
+        editor.drag(0, 100, 0, 100)
+        val r = 100 / 3.0
+
+        editor.drag(0, -r, 0, -r - 20) // C1 would need e3 = 160
+
+        // fallback: everything moved by the drag
+        assertTrue(editor.vertex(0).pos.distanceTo(Vec2(0.0, -20.0)) < 1e-9, "v0 at ${editor.vertex(0).pos}")
+        assertTrue(abs(poly.edges[3].length - 100.0) < Solver.EPS)
+        assertTrue(editor.continuityError() < Solver.EPS)
     }
 }

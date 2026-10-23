@@ -310,4 +310,41 @@ class PolygonTest {
         assertEquals(Continuity.G1, p.vertices[0].continuity)
         assertEquals(Continuity.G0, p.vertices[1].continuity)
     }
+
+    // ---- continuity constraints for the solver ----
+
+    @Test
+    fun noContinuityConstraintsForG0() {
+        val p = square()
+        p.edges[0].shape = bezier()
+
+        assertTrue(p.continuityConstraints().isEmpty())
+    }
+
+    @Test
+    fun continuityConstraintAtAVertexNextToABezier() {
+        val p = square()
+        p.edges[0].shape = bezier()
+        p.vertices[0].continuity = Continuity.C1
+        p.vertices[1].continuity = Continuity.G1
+
+        val constraints = p.continuityConstraints()
+
+        assertEquals(2, constraints.size)
+        val (atV0, atV1) = constraints
+        assertSame(p.vertices[0], atV0.vertex)
+        assertSame(p.edges[3], atV0.incoming)
+        assertSame(p.edges[0], atV0.outgoing)
+        assertTrue(atV0.c1)
+        assertFalse(atV1.c1)
+    }
+
+    @Test
+    fun noContinuityConstraintNextToAnArc() {
+        val p = squareWithArc()
+        p.edges[3].shape = bezier()
+        p.vertices[0].continuity = Continuity.G1 // the arc follows the Bézier when drawn – nothing for the solver
+
+        assertTrue(p.continuityConstraints().isEmpty())
+    }
 }

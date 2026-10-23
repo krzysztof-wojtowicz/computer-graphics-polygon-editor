@@ -38,6 +38,9 @@ class Scene {
     // Removes constraint from the list
     fun removeConstraint(c: Constraint): Boolean = constraints.remove(c)
 
+    // Stored constraints + the ones derived from vertex continuity – everything the solver has to keep
+    fun allConstraints(): List<Constraint> = constraints + polygons.flatMap { it.continuityConstraints() }
+
     // Returns list of constraints for given edge
     fun constraintsOf(edge: Edge): List<Constraint> = constraints.filter { c -> edge in c.edges }
 

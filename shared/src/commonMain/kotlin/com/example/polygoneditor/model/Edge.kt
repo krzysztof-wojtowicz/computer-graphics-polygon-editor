@@ -26,4 +26,11 @@ class Edge(val start: Vertex, val end: Vertex, var shape: EdgeShape = EdgeShape.
 
     // Returns vector representing edge
     val vector: Vec2 get() = end.pos - start.pos
+
+    // The point right next to v on this edge: the other end of a line, the control point of a Bézier, none for an arc
+    fun pointNextTo(v: Vertex): Point? = when (val s = shape) {
+        EdgeShape.Line -> if (v === start) end else start
+        is EdgeShape.Bezier -> if (v === start) s.c1 else s.c2
+        EdgeShape.Arc -> null
+    }
 }

@@ -1,11 +1,16 @@
 package com.example.polygoneditor.solver
 
+import com.example.polygoneditor.geometry.Vec2
 import com.example.polygoneditor.geometry.midpoint
 import com.example.polygoneditor.geometry.perpendicular
+import com.example.polygoneditor.model.ControlPoint
 import com.example.polygoneditor.model.Edge
+import com.example.polygoneditor.model.EdgeShape
+import com.example.polygoneditor.model.Point
 import com.example.polygoneditor.model.constraints.Constraint
 import com.example.polygoneditor.model.constraints.FixedLength
 import com.example.polygoneditor.model.constraints.Perpendicular
+import com.example.polygoneditor.model.constraints.Smooth
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -16,6 +21,8 @@ fun Constraint.error(): Double = when (this) {
         val longer = max(e1.length, e2.length)
         if (longer < 1e-9) 0.0 else abs(e1.vector dot e2.vector) / longer // both zero-length: 0/0 = NaN
     }
+    // How far the point after the vertex is from where it should be; no direction to follow -> nothing to fix
+    is Smooth -> targetFor(after)?.distanceTo(after.pos) ?: 0.0
 }
 
 // Moves the constraint's points so that error() == 0, respects locks
@@ -23,6 +30,7 @@ fun Constraint.project(locks: Locks) {
     when (this) {
         is FixedLength -> projectLength(locks)
         is Perpendicular -> projectPerpendicular(locks)
+        is Smooth -> projectSmooth(locks)
     }
 }
 
@@ -82,4 +90,52 @@ private fun rotatePerpendicular(moving: Edge, reference: Edge, locks: Locks): Bo
         }
     }
     return true
+}
+
+// ---- continuity G1 / C1 ----
+// P – point before the vertex V (on the incoming edge), C – point after it (on the outgoing edge)
+// u = V − P – direction of arrival, w = C − V – direction of leaving
+// G1: w has the direction of u; C1: w = k·u
+
+// Smooth is generated only next to a Bézier and never next to an arc, so both points exist
+private val Smooth.before: Point get() = incoming.pointNextTo(vertex)!!
+private val Smooth.after: Point get() = outgoing.pointNextTo(vertex)!!
+
+// Derivative at the end: Bézier 3·(V − c), line (t in [0, 1]) just its vector – so C1 means w·wOut = u·wIn
+private fun weight(e: Edge) = if (e.shape is EdgeShape.Bezier) 3.0 else 1.0
+
+private val Smooth.ratio: Double get() = weight(incoming) / weight(outgoing)
+
+// Where `moving` (before or after) has to stand so the constraint holds, the other point stays
+// G1 rotates it around V keeping its distance; null when the other side has no direction (zero length)
+private fun Smooth.targetFor(moving: Point): Vec2? {
+    val v = vertex.pos
+    val u = v - before.pos
+    val w = after.pos - v
+
+    return if (moving === after) {
+        when {
+            c1 -> v + u * ratio
+            u.length < 1e-9 -> null
+            else -> v + u / u.length * w.length
+        }
+    } else {
+        when {
+            c1 -> v - w / ratio
+            w.length < 1e-9 -> null
+            else -> v - w / w.length * u.length
+        }
+    }
+}
+
+// Moves P or C, never V (a dragged vertex has to stay under the cursor)
+// A control point goes first: otherwise dragging a vertex next to a line would move the line's far end
+// instead of turning the handle; among the same kind – the less locked one, on a tie C
+// Both locked -> nothing moves, the error stays and solve fails (fallback)
+private fun Smooth.projectSmooth(locks: Locks) {
+    val moving = listOf(after, before)
+        .filter { locks.levelOf(it) != LockLevel.Locked }
+        .minWithOrNull(compareBy({ it !is ControlPoint }, { locks.levelOf(it) })) ?: return
+
+    targetFor(moving)?.let { moving.pos = it }
 }

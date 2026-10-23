@@ -1,15 +1,19 @@
 package com.example.polygoneditor
 
 import com.example.polygoneditor.geometry.Vec2
+import com.example.polygoneditor.model.ControlPoint
 import com.example.polygoneditor.model.Edge
+import com.example.polygoneditor.model.EdgeShape
 import com.example.polygoneditor.model.Polygon
 import com.example.polygoneditor.model.Vertex
 import com.example.polygoneditor.model.constraints.FixedLength
 import com.example.polygoneditor.model.constraints.Perpendicular
+import com.example.polygoneditor.model.constraints.Smooth
 import com.example.polygoneditor.solver.LockLevel
 import com.example.polygoneditor.solver.Locks
 import com.example.polygoneditor.solver.Solver
 import com.example.polygoneditor.solver.error
+import com.example.polygoneditor.solver.project
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
@@ -339,5 +343,138 @@ class SolverTest {
         assertEquals(0.0, Perpendicular(point, Edge(v(1, 1), v(1, 1))).error())
         assertTrue(Solver.solve(listOf(Perpendicular(point, e2)), Locks.None))
         assertEquals(endBefore, e2.end.pos)
+    }
+
+    // ---- continuity (Smooth) ----
+
+    // V = (100, 0) between e0: (0,0) → V and e1: V → (100,100)
+    private fun corner() = Polygon(listOf(Vec2(0.0, 0.0), Vec2(100.0, 0.0), Vec2(100.0, 100.0), Vec2(0.0, 100.0)))
+
+    private fun cp(x: Number, y: Number) = ControlPoint(Vec2(x.toDouble(), y.toDouble()))
+
+    private fun Polygon.smoothAtV(c1: Boolean) = Smooth(vertices[1], edges[0], edges[1], c1)
+
+    // e0 arrives along (20, 0) (c2 = (80, 0)), e1 leaves along (0, 30) (c1 = (100, 30)) – a right angle at V
+    private fun cornerWithTwoCurves() = corner().apply {
+        edges[0].shape = EdgeShape.Bezier(cp(30, 0), cp(80, 0))
+        edges[1].shape = EdgeShape.Bezier(cp(100, 30), cp(100, 70))
+    }
+
+    private fun Polygon.bezier(i: Int) = edges[i].shape as EdgeShape.Bezier
+
+    @Test
+    fun smoothErrorIsTheDistanceOfTheLeavingPointFromItsTarget() {
+        val p = cornerWithTwoCurves()
+
+        assertTrue(abs(p.smoothAtV(c1 = true).error() - Vec2(20.0, -30.0).length) < 1e-9)   // C should be (120, 0)
+        assertTrue(abs(p.smoothAtV(c1 = false).error() - Vec2(30.0, -30.0).length) < 1e-9)  // C should be (130, 0)
+    }
+
+    @Test
+    fun c1BetweenTwoBeziersMirrorsTheControlPoint() {
+        val p = cornerWithTwoCurves()
+        val s = p.smoothAtV(c1 = true)
+
+        s.project(Locks.None)
+
+        assertClose(Vec2(120.0, 0.0), p.bezier(1).c1.pos) // C = 2V − P
+        assertClose(Vec2(80.0, 0.0), p.bezier(0).c2.pos)  // P stays
+        assertTrue(s.error() < 1e-9)
+    }
+
+    @Test
+    fun g1KeepsTheLengthOfTheArm() {
+        val p = cornerWithTwoCurves()
+        val s = p.smoothAtV(c1 = false)
+
+        s.project(Locks.None)
+
+        assertClose(Vec2(130.0, 0.0), p.bezier(1).c1.pos) // rotated around V, still 30 away
+        assertTrue(s.error() < 1e-9)
+    }
+
+    @Test
+    fun c1AfterALineUsesAThirdOfIt() {
+        val p = corner()
+        p.edges[1].shape = EdgeShape.Bezier(cp(100, 30), cp(100, 70)) // e0 stays a line, P = (0, 0)
+
+        p.smoothAtV(c1 = true).project(Locks.None)
+
+        assertClose(Vec2(100 + 100 / 3.0, 0.0), p.bezier(1).c1.pos) // C = V + (V − P) / 3
+    }
+
+    @Test
+    fun c1BeforeALineMovesTheControlPointNotTheLinesEnd() {
+        val p = corner()
+        p.edges[0].shape = EdgeShape.Bezier(cp(30, 0), cp(80, 0)) // e1 stays a line, C = vertex (100, 100)
+
+        p.smoothAtV(c1 = true).project(Locks.None)
+
+        assertClose(Vec2(100.0, 100.0), p.vertices[2].pos)            // the line's far end stays
+        assertClose(Vec2(100.0, -100 / 3.0), p.bezier(0).c2.pos)      // P = V − (C − V) / 3
+    }
+
+    @Test
+    fun lockedLeavingPointMakesTheArrivingOneMove() {
+        val p = cornerWithTwoCurves()
+        val c = p.bezier(1).c1
+
+        p.smoothAtV(c1 = true).project(Locks(locked = setOf(c)))
+
+        assertClose(Vec2(100.0, 30.0), c.pos)
+        assertClose(Vec2(100.0, -30.0), p.bezier(0).c2.pos) // P = 2V − C
+    }
+
+    @Test
+    fun vertexIsNeverMovedBySmooth() {
+        val p = cornerWithTwoCurves()
+
+        p.smoothAtV(c1 = true).project(Locks.None)
+        p.smoothAtV(c1 = false).project(Locks.None)
+
+        assertClose(Vec2(100.0, 0.0), p.vertices[1].pos)
+    }
+
+    @Test
+    fun bothPointsLockedSolveFails() {
+        val p = cornerWithTwoCurves()
+        val locks = Locks(locked = setOf(p.bezier(0).c2, p.bezier(1).c1))
+
+        assertFalse(Solver.solve(listOf(p.smoothAtV(c1 = true)), locks))
+        assertClose(Vec2(100.0, 30.0), p.bezier(1).c1.pos)
+    }
+
+    @Test
+    fun g1WithAControlPointOnTheVertexHasNoDirectionToFix() {
+        val p = cornerWithTwoCurves()
+        p.bezier(0).c2.pos = Vec2(100.0, 0.0) // P on V – no arriving direction
+
+        assertEquals(0.0, p.smoothAtV(c1 = false).error())
+    }
+
+    @Test
+    fun solverKeepsLengthAndC1Together() {
+        val p = corner()
+        p.edges[1].shape = EdgeShape.Bezier(cp(100, 30), cp(100, 70))
+        val c = p.bezier(1).c1
+        val constraints = listOf(FixedLength(p.edges[0], 100.0), p.smoothAtV(c1 = true))
+
+        // C on the edge's line, 100/3 from V – both can hold, P has to turn
+        c.pos = Vec2(100 + 100 / 3.0 * cos(1.0), 100 / 3.0 * sin(1.0))
+        assertTrue(Solver.solve(constraints, Locks(locked = setOf(c), protected = setOf(p.vertices[1]))))
+
+        assertLength(100.0, p.edges[0])
+        assertTrue(constraints[1].error() < Solver.EPS)
+    }
+
+    @Test
+    fun lengthAndC1ConflictWhenTheArmIsTooLong() {
+        val p = corner()
+        p.edges[1].shape = EdgeShape.Bezier(cp(100, 30), cp(100, 70))
+        val c = p.bezier(1).c1
+        c.pos = Vec2(150.0, 0.0) // C1 needs |V − P| = 150, the length says 100
+        val constraints = listOf(FixedLength(p.edges[0], 100.0), p.smoothAtV(c1 = true))
+
+        assertFalse(Solver.solve(constraints, Locks(locked = setOf(c), protected = setOf(p.vertices[1]))))
     }
 }

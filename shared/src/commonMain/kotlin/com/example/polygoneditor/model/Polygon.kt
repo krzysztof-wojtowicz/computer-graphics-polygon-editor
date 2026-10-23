@@ -6,6 +6,7 @@ import com.example.polygoneditor.geometry.bezierPoints
 import com.example.polygoneditor.geometry.bezierSegments
 import com.example.polygoneditor.geometry.containsEvenOdd
 import com.example.polygoneditor.geometry.midpoint
+import com.example.polygoneditor.model.constraints.Smooth
 
 // Closed polygon, represented by the list of Edge objects
 class Polygon(points: List<Vec2>) {
@@ -138,11 +139,16 @@ class Polygon(points: List<Vec2>) {
         }
     }
 
-    // Returns the point right next to v: the other end of a line, the control point of a Bezier
-    private fun Edge.pointNextTo(v: Vertex): Vec2? = when (val s = shape) {
-        EdgeShape.Line -> (if (v === start) end else start).pos
-        is EdgeShape.Bezier -> (if (v === start) s.c1 else s.c2).pos
-        EdgeShape.Arc -> null
+    // Continuity constraints for the solver, built from vertex.continuity – never stored in scene.constraints
+    // Only next to a Bézier: an arc follows its neighbour by itself when drawn, two lines have nothing to bend
+    fun continuityConstraints(): List<Smooth> = vertices.mapNotNull { v ->
+        val (incoming, outgoing) = edgesAt(v)
+        val shapes = listOf(incoming.shape, outgoing.shape)
+        when {
+            v.continuity == Continuity.G0 -> null
+            shapes.none { it is EdgeShape.Bezier } || shapes.any { it is EdgeShape.Arc } -> null
+            else -> Smooth(v, incoming, outgoing, c1 = v.continuity == Continuity.C1)
+        }
     }
 
     // Returns the polyline of a given edge represented by list of Vec2 points
@@ -161,8 +167,8 @@ class Polygon(points: List<Vec2>) {
             val b = edge.end
             val incoming = edgesAt(a).first
             val outgoing = edgesAt(b).second
-            val before = incoming.pointNextTo(a)
-            val after = outgoing.pointNextTo(b)
+            val before = incoming.pointNextTo(a)?.pos
+            val after = outgoing.pointNextTo(b)?.pos
 
             when {
                 a.continuity != Continuity.G0 && before != null ->

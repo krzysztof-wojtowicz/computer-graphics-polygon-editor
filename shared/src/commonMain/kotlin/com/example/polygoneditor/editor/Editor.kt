@@ -172,7 +172,7 @@ class Editor(val scene: Scene) {
 
         points.forEach { it.pos += delta }
         carried.forEach { it.pos += delta }
-        if (!Solver.solve(scene.constraints, Locks(locked = points.toSet(), protected = protected + carried))) {
+        if (!Solver.solve(scene.allConstraints(), Locks(locked = points.toSet(), protected = protected + carried))) {
             scene.restore(s)
             polygon.translate(delta)
         }
@@ -186,7 +186,7 @@ class Editor(val scene: Scene) {
         replaced.forEach { scene.removeConstraint(it) }
         scene.addConstraint(c)
 
-        if (!Solver.solve(scene.constraints, Locks.None)) {
+        if (!Solver.solve(scene.allConstraints(), Locks.None)) {
             scene.restore(s)
             scene.removeConstraint(c)
             replaced.forEach { scene.addConstraint(it) }
