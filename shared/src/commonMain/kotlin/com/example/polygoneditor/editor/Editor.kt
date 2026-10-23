@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.example.polygoneditor.geometry.Vec2
 import com.example.polygoneditor.geometry.distanceToSegment
+import com.example.polygoneditor.model.Continuity
 import com.example.polygoneditor.model.ControlPoint
 import com.example.polygoneditor.model.Edge
 import com.example.polygoneditor.model.EdgeShape
@@ -107,7 +108,7 @@ class Editor(val scene: Scene) {
         // Edge
         for (poly in polygons) {
             poly.edges.firstOrNull {
-                it.polyline.zipWithNext().any { (a, b) -> distanceToSegment(p, a, b) <= EDGE_HIT_TOLERANCE }
+                poly.polylineOf(it).zipWithNext().any { (a, b) -> distanceToSegment(p, a, b) <= EDGE_HIT_TOLERANCE }
             }
                 ?.let { return Hit.OnEdge(poly, it) }
         }
@@ -260,6 +261,41 @@ class Editor(val scene: Scene) {
         if (edge.shape is EdgeShape.Line) return
 
         scene.changeShape(edge, EdgeShape.Line)
+        changed()
+    }
+
+    // Handles edge shape change to arc
+    fun toArc(edge: Edge) {
+        message = null
+        if (edge.shape is EdgeShape.Arc) return
+
+        scene.changeShape(edge, EdgeShape.Arc)
+        changed()
+    }
+
+    // Sets the continuity class at vertex v
+    // Only one end of an arc can be G1 – setting it here switches the other end to G0
+    fun setContinuity(polygon: Polygon, v: Vertex, c: Continuity) {
+        message = null
+        if (c !in polygon.allowedContinuities(v)) {
+            message = "${c.name} is not available at this vertex."
+            return
+        }
+
+        v.continuityExplicit = true // chosen by the user, not a default
+        if (v.continuity == c) return
+        v.continuity = c
+
+        if (c == Continuity.G1) {
+            for (edge in polygon.edgesAt(v).toList().filter { it.shape is EdgeShape.Arc }) {
+                val other = if (edge.start === v) edge.end else edge.start
+                if (other.continuity == Continuity.G1) {
+                    other.continuity = Continuity.G0
+                    message = "Only one end of an arc can be G1 – the other end was set to G0."
+                }
+            }
+        }
+
         changed()
     }
 

@@ -50,6 +50,7 @@ class Scene {
         val v = polygon.insertVertexOnEdge(edge)
 
         dropConstraintsOf(listOf(edge))
+        polygon.normalizeContinuity() // the new edges are lines – the ends may lose G1
 
         return v
     }
@@ -61,12 +62,15 @@ class Scene {
         if (!polygon.removeVertex(v)) return false
 
         dropConstraintsOf(listOf(incoming, outgoing))
+        polygon.normalizeContinuity()
         return true
     }
 
     // Changes edge shape and removes all current constraints if new shape is a curve or arc
+    // The continuity at both ends is brought back to what the new neighbours allow
     fun changeShape(edge: Edge, shape: EdgeShape) {
         edge.shape = shape
         if (shape !is EdgeShape.Line) dropConstraintsOf(listOf(edge))
+        polygons.forEach { it.normalizeContinuity() }
     }
 }

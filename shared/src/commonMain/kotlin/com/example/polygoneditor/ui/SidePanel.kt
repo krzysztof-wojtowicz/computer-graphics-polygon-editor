@@ -24,11 +24,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.example.polygoneditor.editor.Editor
 import com.example.polygoneditor.editor.LineAlgorithm
 import com.example.polygoneditor.editor.Selection
+import com.example.polygoneditor.model.Continuity
 import com.example.polygoneditor.model.EdgeShape
 import com.example.polygoneditor.model.constraints.Constraint
 import com.example.polygoneditor.model.constraints.FixedLength
@@ -74,7 +76,9 @@ private fun VertexSection(editor: Editor, s: Selection.OnVertex) {
     val v = s.vertex
     Header("Vertex ${s.polygon.vertices.indexOf(v) + 1} of ${s.polygon.vertices.size}")
     Text("Position: (${v.pos.x.fmt()}, ${v.pos.y.fmt()})")
-    Text("Continuity: ${v.continuity.name}")
+
+    Gap()
+    ContinuitySection(editor, s)
 
     Gap()
     Button(onClick = editor::deleteSelected, modifier = Modifier.fillMaxWidth()) {
@@ -121,7 +125,7 @@ private fun EdgeSection(editor: Editor, s: Selection.OnEdge) {
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         ShapeButton("Line", edge.shape is EdgeShape.Line, { editor.toLine(edge) }, Modifier.weight(1f))
         ShapeButton("Bézier", edge.shape is EdgeShape.Bezier, { editor.toBezier(edge) }, Modifier.weight(1f))
-        PlaceholderButton("Arc", Modifier.weight(1f)) // enabled together with arcs
+        ShapeButton("Arc", edge.shape is EdgeShape.Arc, { editor.toArc(edge) }, Modifier.weight(1f))
     }
 
     // No show()/hide() in Compose: the dialog exists only while the condition holds
@@ -172,26 +176,34 @@ private fun ConstraintList(editor: Editor, constraints: List<Constraint>) {
     }
 }
 
+// G0 / G1 / C1 radios, the ones the neighbouring edges don't allow are disabled
+@Composable
+private fun ContinuitySection(editor: Editor, s: Selection.OnVertex) {
+    val v = s.vertex
+    val allowed = s.polygon.allowedContinuities(v)
+    val nextToArc = s.polygon.edgesAt(v).toList().any { it.shape is EdgeShape.Arc }
+
+    Text("Continuity", style = MaterialTheme.typography.titleSmall)
+    for (c in Continuity.entries) {
+        RadioRow(c.name, v.continuity == c, c in allowed, { editor.setContinuity(s.polygon, v, c) })
+    }
+
+    // Why some options are disabled
+    val hint = when {
+        allowed.size == Continuity.entries.size -> null
+        allowed.size == 1 && nextToArc -> "Between two arcs only G0"
+        allowed.size == 1 -> "G1 and C1 only next to a curve"
+        else -> "An arc allows only G0 and G1"
+    }
+    hint?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+}
+
 // Always visible, independent of the selection
 @Composable
 private fun LineAlgorithmSection(editor: Editor) {
     Text("Line drawing", style = MaterialTheme.typography.titleSmall)
     for (algorithm in LineAlgorithm.entries) {
-        val selected = editor.lineAlgorithm == algorithm
-        // The whole row is clickable, not only the circle
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .selectable(
-                    selected = selected,
-                    onClick = { editor.lineAlgorithm = algorithm },
-                    role = Role.RadioButton,
-                ),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            RadioButton(selected = selected, onClick = null) // the row handles the click
-            Text(algorithm.name, Modifier.padding(start = 8.dp))
-        }
+        RadioRow(algorithm.name, editor.lineAlgorithm == algorithm, onClick = { editor.lineAlgorithm = algorithm })
     }
 }
 
@@ -207,6 +219,24 @@ private fun Gap() {
     Spacer(Modifier.height(6.dp))
 }
 
+// The whole row is clickable, not only the circle
+@Composable
+private fun RadioRow(text: String, selected: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .selectable(selected = selected, enabled = enabled, onClick = onClick, role = Role.RadioButton),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = null, enabled = enabled) // the row handles the click
+        Text(
+            text,
+            Modifier.padding(start = 8.dp),
+            color = if (enabled) Color.Unspecified else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+        )
+    }
+}
+
 // Three buttons in a row are narrow – the default 24 dp side padding would wrap "Bézier"
 private val NarrowPadding = PaddingValues(horizontal = 4.dp)
 
@@ -217,14 +247,6 @@ private fun ShapeButton(text: String, current: Boolean, onClick: () -> Unit, mod
         Button(onClick = onClick, modifier = modifier, contentPadding = NarrowPadding) { Text(text) }
     } else {
         OutlinedButton(onClick = onClick, modifier = modifier, contentPadding = NarrowPadding) { Text(text) }
-    }
-}
-
-// A disabled button marking where an action will be added later
-@Composable
-private fun PlaceholderButton(text: String, modifier: Modifier = Modifier.fillMaxWidth()) {
-    OutlinedButton(onClick = {}, enabled = false, modifier = modifier, contentPadding = NarrowPadding) {
-        Text(text)
     }
 }
 

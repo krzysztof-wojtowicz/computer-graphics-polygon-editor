@@ -4,6 +4,8 @@ import com.example.polygoneditor.editor.Editor
 import com.example.polygoneditor.editor.Hit
 import com.example.polygoneditor.editor.Selection
 import com.example.polygoneditor.geometry.Vec2
+import com.example.polygoneditor.geometry.arcPoints
+import com.example.polygoneditor.model.Continuity
 import com.example.polygoneditor.model.ControlPoint
 import com.example.polygoneditor.model.EdgeShape
 import com.example.polygoneditor.model.Scene
@@ -849,5 +851,208 @@ class EditorTest {
         assertEquals(Vec2(80.0, -30.0), editor.bezierOf(0).c2.pos)
         // e0's control point next to v0 – stays
         assertEquals(Vec2(30.0, -30.0), editor.bezierOf(0).c1.pos)
+    }
+
+    // ---- arcs ----
+
+    @Test
+    fun toArcKeepsVerticesAndRemovesTheEdgesConstraints() {
+        val editor = editorWithSquare()
+        val (e0, e1, e2) = editor.scene.polygons[0].edges
+        editor.setLength(e0, 100.0)
+        editor.makePerpendicular(e0, e1)
+        editor.setLength(e2, 100.0)
+        val e2Length = editor.scene.constraintsOf(e2).single()
+
+        editor.toArc(e0)
+
+        assertEquals(EdgeShape.Arc, e0.shape)
+        assertEquals(squarePositions, editor.vertexPositions())
+        assertEquals(listOf(e2Length), editor.scene.constraints)
+    }
+
+    @Test
+    fun toArcFromBezierDropsTheControlPoints() {
+        val editor = editorWithBentSquare()
+        val e0 = editor.scene.polygons[0].edges[0]
+
+        editor.toArc(e0)
+
+        assertEquals(EdgeShape.Arc, e0.shape)
+        assertEquals(4, editor.scene.allPoints().size)
+    }
+
+    @Test
+    fun toArcOnAnArcChangesNothing() {
+        val editor = editorWithSquare()
+        val e0 = editor.scene.polygons[0].edges[0]
+        editor.toArc(e0)
+        val before = editor.version
+
+        editor.toArc(e0)
+
+        assertEquals(before, editor.version)
+    }
+
+    @Test
+    fun clickOnTheSemicircleSelectsTheArcEdge() {
+        val editor = editorWithSquare()
+        val poly = editor.scene.polygons[0]
+        editor.toArc(poly.edges[0]) // semicircle over e0: center (50,0), radius 50, top at (50,-50)
+
+        editor.click(50, -50)
+
+        assertEquals(Selection.OnEdge(poly, poly.edges[0]), editor.selection)
+    }
+
+    @Test
+    fun clickOnTheChordOfAnArcGrabsThePolygon() {
+        val editor = editorWithSquare()
+        editor.toArc(editor.scene.polygons[0].edges[0])
+
+        editor.drag(50, 0, 60, 0) // the chord is inside now – the whole polygon moves
+
+        assertEquals(squarePositions.map { it + Vec2(10.0, 0.0) }, editor.vertexPositions())
+    }
+
+    @Test
+    fun arcFollowsItsVertices() {
+        val editor = editorWithSquare()
+        val poly = editor.scene.polygons[0]
+        editor.toArc(poly.edges[0])
+
+        editor.drag(100, 0, 140, 0) // v1: the chord is now (0,0)–(140,0), the semicircle grows
+
+        assertEquals(arcPoints(Vec2(0.0, 0.0), Vec2(140.0, 0.0)), poly.polylineOf(poly.edges[0]))
+    }
+
+    // ---- continuity ----
+
+    private fun Editor.vertex(i: Int) = scene.polygons[0].vertices[i]
+
+    private fun Editor.setContinuity(i: Int, c: Continuity) = setContinuity(scene.polygons[0], vertex(i), c)
+
+    @Test
+    fun continuityNotAllowedAtTheVertexIsRejected() {
+        val editor = editorWithSquare()
+        val before = editor.version
+
+        editor.setContinuity(0, Continuity.G1) // two lines
+
+        assertEquals(Continuity.G0, editor.vertex(0).continuity)
+        assertNotNull(editor.message)
+        assertEquals(before, editor.version)
+    }
+
+    @Test
+    fun c1NextToAnArcIsRejected() {
+        val editor = editorWithSquare()
+        editor.toArc(editor.scene.polygons[0].edges[0])
+
+        editor.setContinuity(0, Continuity.C1)
+
+        assertEquals(Continuity.G0, editor.vertex(0).continuity)
+        assertNotNull(editor.message)
+    }
+
+    @Test
+    fun setContinuityMarksTheChoiceAsExplicit() {
+        val editor = editorWithBentSquare()
+        val before = editor.version
+
+        editor.setContinuity(0, Continuity.C1)
+
+        assertEquals(Continuity.C1, editor.vertex(0).continuity)
+        assertTrue(editor.vertex(0).continuityExplicit)
+        assertNull(editor.message)
+        assertTrue(editor.version > before)
+    }
+
+    @Test
+    fun g1AtTheOtherEndOfAnArcSwitchesTheFirstToG0() {
+        val editor = editorWithSquare()
+        editor.toArc(editor.scene.polygons[0].edges[0])
+
+        editor.setContinuity(0, Continuity.G1)
+        editor.setContinuity(1, Continuity.G1)
+
+        assertEquals(Continuity.G0, editor.vertex(0).continuity)
+        assertEquals(Continuity.G1, editor.vertex(1).continuity)
+        assertNotNull(editor.message) // the user is told why v0 changed
+    }
+
+    @Test
+    fun arcFollowsItsNeighbourWhenTheNeighbourIsDragged() {
+        val editor = editorWithSquare()
+        val poly = editor.scene.polygons[0]
+        val arc = poly.edges[0]
+        editor.toArc(arc)
+        editor.setContinuity(0, Continuity.G1)
+        val before = poly.polylineOf(arc)
+
+        editor.drag(0, 100, -50, 100) // v3: e3 now comes into v0 heading (50, -100)
+
+        val after = poly.polylineOf(arc)
+        assertTrue(after != before, "the arc changed")
+        assertEquals(arcPoints(Vec2(0.0, 0.0), Vec2(100.0, 0.0), startTangent = Vec2(50.0, -100.0)), after)
+    }
+
+    @Test
+    fun arcBackToLineDropsG1() {
+        val editor = editorWithSquare()
+        val e0 = editor.scene.polygons[0].edges[0]
+        editor.toArc(e0)
+        editor.setContinuity(0, Continuity.G1)
+
+        editor.toLine(e0)
+
+        assertEquals(Continuity.G0, editor.vertex(0).continuity)
+    }
+
+    @Test
+    fun bezierWithC1ToArcLowersToG1() {
+        val editor = editorWithBentSquare()
+        editor.setContinuity(0, Continuity.C1)
+
+        editor.toArc(editor.scene.polygons[0].edges[0])
+
+        assertEquals(Continuity.G1, editor.vertex(0).continuity)
+    }
+
+    @Test
+    fun edgeWithG1AtBothEndsToArcKeepsOnlyTheStart() {
+        val editor = editorWithBentSquare()
+        editor.setContinuity(0, Continuity.G1)
+        editor.setContinuity(1, Continuity.G1)
+
+        editor.toArc(editor.scene.polygons[0].edges[0])
+
+        assertEquals(Continuity.G1, editor.vertex(0).continuity)
+        assertEquals(Continuity.G0, editor.vertex(1).continuity)
+    }
+
+    @Test
+    fun insertingAVertexIntoAnArcDropsG1AtItsEnds() {
+        val editor = editorWithSquare()
+        val poly = editor.scene.polygons[0]
+        editor.toArc(poly.edges[0])
+        editor.setContinuity(0, Continuity.G1)
+
+        editor.scene.insertVertex(poly, poly.edges[0]) // the arc is replaced by two lines
+
+        assertEquals(Continuity.G0, poly.vertices[0].continuity)
+    }
+
+    @Test
+    fun removingAVertexNormalizesTheNeighbours() {
+        val editor = editorWithSquare()
+        val poly = editor.scene.polygons[0]
+        editor.toArc(poly.edges[0])
+        val v1 = editor.vertex(1)
+        editor.setContinuity(1, Continuity.G1)
+
+        editor.scene.removeVertex(poly, editor.vertex(0)) // e3 + arc become one line into v1
+
+        assertEquals(Continuity.G0, v1.continuity)
     }
 }

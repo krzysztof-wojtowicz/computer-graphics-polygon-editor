@@ -39,6 +39,7 @@ import com.example.polygoneditor.editor.LineAlgorithm
 import com.example.polygoneditor.geometry.Vec2
 import com.example.polygoneditor.geometry.midpoint
 import com.example.polygoneditor.geometry.perpendicular
+import com.example.polygoneditor.model.Continuity
 import com.example.polygoneditor.model.EdgeShape
 import com.example.polygoneditor.render.BresenhamPainter
 import com.example.polygoneditor.render.LibraryPainter
@@ -55,6 +56,9 @@ private val LabelStyle = TextStyle(fontSize = 11.sp, color = Color(0xFF7C3AED))
 
 // Distance (in dp) of a constraint icon from the middle of its edge
 private const val ICON_OFFSET = 14.0
+
+// Distance (in dp, along both axes) of a continuity label from its vertex
+private const val LABEL_OFFSET = 12.0
 
 // Max distance (in dp) between the two presses of a double click
 private const val DOUBLE_CLICK_SLOP = 4.0
@@ -163,7 +167,7 @@ fun SceneCanvas(editor: Editor, modifier: Modifier = Modifier) {
                 }
 
                 // we draw each segment of given edge
-                edge.polyline.map { toScreen(it) }.zipWithNext { a, b -> painter.line(a, b, color) }
+                poly.polylineOf(edge).map { toScreen(it) }.zipWithNext { a, b -> painter.line(a, b, color) }
             }
 
             // Draw control polygon for Bézier curves
@@ -224,6 +228,12 @@ fun SceneCanvas(editor: Editor, modifier: Modifier = Modifier) {
                 val center = if (candidate in poly) mid - normal * ICON_OFFSET else candidate
 
                 drawLabel(textMeasurer, constraints.joinToString(" ") { it.shortLabel(numbers) }, toScreen(center))
+            }
+
+            // Continuity label next to every vertex that isn't G0
+            for (v in poly.vertices) {
+                if (v.continuity == Continuity.G0) continue
+                drawLabel(textMeasurer, v.continuity.name, toScreen(v.pos + Vec2(LABEL_OFFSET, -LABEL_OFFSET)))
             }
         }
     }
