@@ -179,6 +179,10 @@ private fun ConstraintList(editor: Editor, constraints: List<Constraint>) {
 // G0 / G1 / C1 radios, the ones the neighbouring edges don't allow are disabled
 @Composable
 private fun ContinuitySection(editor: Editor, s: Selection.OnVertex) {
+    // Own subscription: the parameters never change, so without it Compose skips this section
+    // when VertexSection redraws, and the radios keep showing the old class
+    editor.version
+
     val v = s.vertex
     val allowed = s.polygon.allowedContinuities(v)
     val nextToArc = s.polygon.edgesAt(v).toList().any { it.shape is EdgeShape.Arc }
