@@ -38,6 +38,9 @@ class Scene {
     // Removes constraint from the list
     fun removeConstraint(c: Constraint): Boolean = constraints.remove(c)
 
+    // Stored constraints + the ones derived from vertex continuity – everything the solver has to keep
+    fun allConstraints(): List<Constraint> = constraints + polygons.flatMap { it.continuityConstraints() }
+
     // Returns list of constraints for given edge
     fun constraintsOf(edge: Edge): List<Constraint> = constraints.filter { c -> edge in c.edges }
 
@@ -50,6 +53,7 @@ class Scene {
         val v = polygon.insertVertexOnEdge(edge)
 
         dropConstraintsOf(listOf(edge))
+        polygon.normalizeContinuity() // the new edges are lines – the ends may lose G1
 
         return v
     }
@@ -61,12 +65,15 @@ class Scene {
         if (!polygon.removeVertex(v)) return false
 
         dropConstraintsOf(listOf(incoming, outgoing))
+        polygon.normalizeContinuity()
         return true
     }
 
     // Changes edge shape and removes all current constraints if new shape is a curve or arc
+    // The continuity at both ends is brought back to what the new neighbours allow
     fun changeShape(edge: Edge, shape: EdgeShape) {
         edge.shape = shape
         if (shape !is EdgeShape.Line) dropConstraintsOf(listOf(edge))
+        polygons.forEach { it.normalizeContinuity() }
     }
 }

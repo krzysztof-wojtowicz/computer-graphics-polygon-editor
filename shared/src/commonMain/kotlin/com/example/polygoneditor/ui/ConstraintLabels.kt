@@ -4,6 +4,7 @@ import com.example.polygoneditor.model.Scene
 import com.example.polygoneditor.model.constraints.Constraint
 import com.example.polygoneditor.model.constraints.FixedLength
 import com.example.polygoneditor.model.constraints.Perpendicular
+import com.example.polygoneditor.model.constraints.Smooth
 
 // Number of each perpendicular pair (1, 2, …) – both edges of a pair ask about the same object, so they get the same number
 internal fun Scene.perpendicularNumbers(): Map<Perpendicular, Int> =
@@ -15,10 +16,12 @@ internal fun Scene.perpendicularNumbers(): Map<Perpendicular, Int> =
 internal fun Constraint.shortLabel(numbers: Map<Perpendicular, Int>) = when (this) {
     is FixedLength -> "L ${length.fmt()}"
     is Perpendicular -> "⊥${numbers[this]}"
+    is Smooth -> if (c1) "C1" else "G1"
 }
 
 // Label for the side panel – the same number as on the canvas
 internal fun Constraint.label(numbers: Map<Perpendicular, Int>) = when (this) {
     is FixedLength -> "Length ${length.fmt()}"
     is Perpendicular -> "Perpendicular ⊥${numbers[this]}"
+    is Smooth -> if (c1) "Continuity C1" else "Continuity G1"
 }

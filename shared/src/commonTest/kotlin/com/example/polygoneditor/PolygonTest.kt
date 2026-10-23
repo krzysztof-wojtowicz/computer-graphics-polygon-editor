@@ -1,6 +1,10 @@
 package com.example.polygoneditor
 
 import com.example.polygoneditor.geometry.Vec2
+import com.example.polygoneditor.geometry.arcPoints
+import com.example.polygoneditor.geometry.bezierPoints
+import com.example.polygoneditor.geometry.bezierSegments
+import com.example.polygoneditor.model.Continuity
 import com.example.polygoneditor.model.ControlPoint
 import com.example.polygoneditor.model.EdgeShape
 import com.example.polygoneditor.model.Polygon
@@ -135,5 +139,212 @@ class PolygonTest {
         assertTrue(Vec2(9.0, 5.0) in bow)
         assertTrue(Vec2(1.0, 5.0) in bow)
         assertFalse(Vec2(5.0, 1.0) in bow)
+    }
+
+    // ---- shape of an edge ----
+
+    @Test
+    fun polylineOfLineIsItsEnds() {
+        val p = square()
+        val e0 = p.edges[0]
+
+        assertEquals(listOf(Vec2(0.0, 0.0), Vec2(10.0, 0.0)), p.polylineOf(e0))
+    }
+
+    @Test
+    fun polylineOfBezierIsTheIncrementalCurve() {
+        val p = square()
+        val e0 = p.edges[0]
+        val c1 = Vec2(3.0, -5.0)
+        val c2 = Vec2(7.0, -5.0)
+        e0.shape = EdgeShape.Bezier(ControlPoint(c1), ControlPoint(c2))
+
+        val a = Vec2(0.0, 0.0)
+        val b = Vec2(10.0, 0.0)
+        assertEquals(bezierPoints(a, c1, c2, b, bezierSegments(a, c1, c2, b)), p.polylineOf(e0))
+    }
+
+    @Test
+    fun polylineOfArcWithG0EndsIsASemicircle() {
+        val p = square()
+        val e0 = p.edges[0]
+        e0.shape = EdgeShape.Arc
+
+        assertEquals(arcPoints(Vec2(0.0, 0.0), Vec2(10.0, 0.0)), p.polylineOf(e0))
+    }
+
+    @Test
+    fun outlineFollowsTheArc() {
+        val p = square()
+        p.edges[0].shape = EdgeShape.Arc // bulges up, outside the square: through (5, -5)
+
+        assertTrue(Vec2(5.0, -3.0) in p)  // between the chord and the arc
+        assertFalse(Vec2(5.0, -6.0) in p) // beyond the arc
+    }
+
+    // ---- arc tangents (G1 at one end) ----
+
+    // Square with e0 as an arc: v0 (0,0) → v1 (10,0)
+    private fun squareWithArc() = square().apply { edges[0].shape = EdgeShape.Arc }
+
+    @Test
+    fun arcWithG1AtStartFollowsTheIncomingLine() {
+        val p = squareWithArc()
+        p.vertices[3].pos = Vec2(-10.0, 10.0) // e3 now comes into v0 heading up-right
+        p.vertices[0].continuity = Continuity.G1
+
+        // The tangent direction itself is checked in ArcTest – here only that the right tangent is passed
+        assertEquals(
+            arcPoints(Vec2(0.0, 0.0), Vec2(10.0, 0.0), startTangent = Vec2(10.0, -10.0)),
+            p.polylineOf(p.edges[0]),
+        )
+    }
+
+    @Test
+    fun arcWithG1AtStartFollowsTheBezierControlPoint() {
+        val p = squareWithArc()
+        // e3: (0,10) → (0,0), c2 at (-5, 5): the curve arrives at v0 heading a − c2 = (5, -5)
+        p.edges[3].shape = EdgeShape.Bezier(ControlPoint(Vec2(0.0, 7.0)), ControlPoint(Vec2(-5.0, 5.0)))
+        p.vertices[0].continuity = Continuity.G1
+
+        assertEquals(
+            arcPoints(Vec2(0.0, 0.0), Vec2(10.0, 0.0), startTangent = Vec2(5.0, -5.0)),
+            p.polylineOf(p.edges[0]),
+        )
+    }
+
+    @Test
+    fun arcWithG1AtEndArrivesAlongTheOutgoingEdge() {
+        val p = squareWithArc()
+        p.vertices[2].pos = Vec2(20.0, 10.0) // e1 now leaves v1 heading down-right
+        p.vertices[1].continuity = Continuity.G1
+
+        assertEquals(
+            arcPoints(Vec2(0.0, 0.0), Vec2(10.0, 0.0), endTangent = Vec2(10.0, 10.0)),
+            p.polylineOf(p.edges[0]),
+        )
+    }
+
+    @Test
+    fun arcNextToAnotherArcStaysASemicircle() {
+        val p = squareWithArc()
+        p.edges[3].shape = EdgeShape.Arc
+        p.vertices[0].continuity = Continuity.G1 // not allowed there, but even if set the arc has no tangent to follow
+
+        assertEquals(arcPoints(Vec2(0.0, 0.0), Vec2(10.0, 0.0)), p.polylineOf(p.edges[0]))
+    }
+
+    @Test
+    fun arcWithG1AtBothEndsUsesTheStart() {
+        val p = squareWithArc()
+        p.vertices[3].pos = Vec2(-10.0, 10.0)
+        p.vertices[0].continuity = Continuity.G1
+        p.vertices[1].continuity = Continuity.G1
+
+        assertEquals(
+            arcPoints(Vec2(0.0, 0.0), Vec2(10.0, 0.0), startTangent = Vec2(10.0, -10.0)),
+            p.polylineOf(p.edges[0]),
+        )
+    }
+
+    // ---- allowed continuity classes ----
+
+    private val all = listOf(Continuity.G0, Continuity.G1, Continuity.C1)
+    private val g0g1 = listOf(Continuity.G0, Continuity.G1)
+    private val g0 = listOf(Continuity.G0)
+
+    private fun bezier() = EdgeShape.Bezier(ControlPoint(Vec2(0.0, 0.0)), ControlPoint(Vec2(0.0, 0.0)))
+
+    @Test
+    fun betweenTwoLinesOnlyG0() {
+        val p = square()
+        assertEquals(g0, p.allowedContinuities(p.vertices[0]))
+    }
+
+    @Test
+    fun nextToABezierEverything() {
+        val p = square()
+        p.edges[0].shape = bezier()
+        assertEquals(all, p.allowedContinuities(p.vertices[0])) // bezier + line
+        p.edges[3].shape = bezier()
+        assertEquals(all, p.allowedContinuities(p.vertices[0])) // bezier + bezier
+    }
+
+    @Test
+    fun nextToAnArcNoC1() {
+        val p = squareWithArc()
+        assertEquals(g0g1, p.allowedContinuities(p.vertices[0])) // arc + line
+        p.edges[3].shape = bezier()
+        assertEquals(g0g1, p.allowedContinuities(p.vertices[0])) // arc + bezier
+    }
+
+    @Test
+    fun betweenTwoArcsOnlyG0() {
+        val p = squareWithArc()
+        p.edges[3].shape = EdgeShape.Arc
+        assertEquals(g0, p.allowedContinuities(p.vertices[0]))
+    }
+
+    // ---- normalization ----
+
+    @Test
+    fun normalizeLowersToTheBestAllowedClass() {
+        val p = squareWithArc()
+        p.vertices[0].continuity = Continuity.C1 // arc + line: C1 -> G1
+        p.vertices[2].continuity = Continuity.G1 // two lines: G1 -> G0
+
+        p.normalizeContinuity()
+
+        assertEquals(Continuity.G1, p.vertices[0].continuity)
+        assertEquals(Continuity.G0, p.vertices[2].continuity)
+    }
+
+    @Test
+    fun normalizeKeepsG1OnlyAtTheStartOfAnArc() {
+        val p = squareWithArc()
+        p.vertices[0].continuity = Continuity.G1
+        p.vertices[1].continuity = Continuity.G1
+
+        p.normalizeContinuity()
+
+        assertEquals(Continuity.G1, p.vertices[0].continuity)
+        assertEquals(Continuity.G0, p.vertices[1].continuity)
+    }
+
+    // ---- continuity constraints for the solver ----
+
+    @Test
+    fun noContinuityConstraintsForG0() {
+        val p = square()
+        p.edges[0].shape = bezier()
+
+        assertTrue(p.continuityConstraints().isEmpty())
+    }
+
+    @Test
+    fun continuityConstraintAtAVertexNextToABezier() {
+        val p = square()
+        p.edges[0].shape = bezier()
+        p.vertices[0].continuity = Continuity.C1
+        p.vertices[1].continuity = Continuity.G1
+
+        val constraints = p.continuityConstraints()
+
+        assertEquals(2, constraints.size)
+        val (atV0, atV1) = constraints
+        assertSame(p.vertices[0], atV0.vertex)
+        assertSame(p.edges[3], atV0.incoming)
+        assertSame(p.edges[0], atV0.outgoing)
+        assertTrue(atV0.c1)
+        assertFalse(atV1.c1)
+    }
+
+    @Test
+    fun noContinuityConstraintNextToAnArc() {
+        val p = squareWithArc()
+        p.edges[3].shape = bezier()
+        p.vertices[0].continuity = Continuity.G1 // the arc follows the Bézier when drawn – nothing for the solver
+
+        assertTrue(p.continuityConstraints().isEmpty())
     }
 }
