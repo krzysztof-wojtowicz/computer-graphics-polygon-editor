@@ -139,6 +139,13 @@ class Polygon(points: List<Vec2>) {
         }
     }
 
+    // Default C1 at both ends of a new Bézier edge – unless the user chose the class or C1 isn't allowed (an arc next to it)
+    fun applyDefaultContinuity(edge: Edge) {
+        listOf(edge.start, edge.end)
+            .filter { !it.continuityExplicit && Continuity.C1 in allowedContinuities(it) }
+            .forEach { it.continuity = Continuity.C1 }
+    }
+
     // Continuity constraints for the solver, built from vertex.continuity – never stored in scene.constraints
     // Only next to a Bézier: an arc follows its neighbour by itself when drawn, two lines have nothing to bend
     fun continuityConstraints(): List<Smooth> = vertices.mapNotNull { v ->

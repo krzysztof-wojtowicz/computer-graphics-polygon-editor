@@ -254,8 +254,7 @@ class Editor(val scene: Scene) {
 
         // Default C1 only where C1 makes sense (not next to an arc)
         val ends = listOf(edge.start, edge.end)
-        ends.filter { !it.continuityExplicit && Continuity.C1 in polygon.allowedContinuities(it) }
-            .forEach { it.continuity = Continuity.C1 }
+        polygon.applyDefaultContinuity(edge)
 
         // Vertices stay, the neighbours' control points move only if they have to – the new curve adapts
         val s = scene.snapshot()
