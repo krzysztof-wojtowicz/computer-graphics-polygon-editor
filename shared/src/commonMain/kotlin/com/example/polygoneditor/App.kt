@@ -11,18 +11,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.polygoneditor.editor.Editor
 import com.example.polygoneditor.model.DemoScene
+import com.example.polygoneditor.ui.HelpDialog
 import com.example.polygoneditor.ui.SceneCanvas
 import com.example.polygoneditor.ui.SidePanel
 
+// showHelp is hoisted: the window catches F1 regardless of which element has focus
 @Composable
-fun App() {
+fun App(showHelp: Boolean, onShowHelpChange: (Boolean) -> Unit) {
     val editor = remember { Editor(DemoScene.create()) }
 
     MaterialTheme {
         Row(Modifier.fillMaxSize()) {
             SceneCanvas(editor, Modifier.weight(1f).fillMaxHeight())
-            SidePanel(editor, Modifier.width(280.dp))
+            SidePanel(editor, onHelp = { onShowHelpChange(true) }, Modifier.width(280.dp))
+        }
+
+        if (showHelp) {
+            HelpDialog(onDismiss = { onShowHelpChange(false) })
         }
     }
 }
-

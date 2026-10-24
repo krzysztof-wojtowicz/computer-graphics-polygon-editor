@@ -36,7 +36,7 @@ import com.example.polygoneditor.model.constraints.Constraint
 import com.example.polygoneditor.model.constraints.FixedLength
 
 @Composable
-fun SidePanel(editor: Editor, modifier: Modifier = Modifier) {
+fun SidePanel(editor: Editor, onHelp: () -> Unit, modifier: Modifier = Modifier) {
     Column(
         modifier
             .fillMaxHeight()
@@ -53,6 +53,9 @@ fun SidePanel(editor: Editor, modifier: Modifier = Modifier) {
         }
         Spacer(Modifier.weight(1f))
         LineAlgorithmSection(editor)
+        OutlinedButton(onClick = onHelp, modifier = Modifier.fillMaxWidth()) {
+            Text("Help (F1)")
+        }
         editor.message?.let {
             Text(it, color = MaterialTheme.colorScheme.error)
         }
@@ -67,6 +70,7 @@ private fun NothingSelected() {
     Text("Shift + click – select a second edge")
     Text("Double click on an edge – insert a vertex")
     Text("Delete – remove the selected vertex")
+    Text("F1 – documentation")
 }
 
 @Composable
